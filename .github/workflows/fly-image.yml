@@ -1,0 +1,106 @@
+name: Validate Fly-target image
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: fly-image-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  fly-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Build the actual Fly target with optional Postgres support
+        run: >-
+          docker build --target fly --build-arg BRIDGE_PYTHON_EXTRAS=desktop,postgres
+          -t desktop-bridge:fly .
+      - name: Start with a fresh root-owned disposable volume
+        run: |
+          docker volume create bridge-fly-data
+          docker run --rm --user root --entrypoint python3 \
+            --mount type=volume,source=bridge-fly-data,target=/data,volume-nocopy \
+            desktop-bridge:fly -c 'import os; assert os.stat("/data").st_uid == 0'
+          docker run -d --name bridge-fly --memory=4g --cpus=2 \
+            --mount type=volume,source=bridge-fly-data,target=/data,volume-nocopy \
+            -p 127.0.0.1:8080:8080 \
+            -e BRIDGE_OWNER_TOKEN=test-only-owner-token-not-for-deployment-123 \
+            -e BRIDGE_PUBLIC_URL=http://127.0.0.1:8080 \
+            -e BRIDGE_CONTEXT_BACKEND=disabled desktop-bridge:fly
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:8080/healthz; then exit 0; fi
+            sleep 2
+          done
+          docker logs bridge-fly
+          exit 1
+      - name: Verify non-root applications and writable mounted state
+        run: |
+          docker exec --user bridge bridge-fly python3 -c '
+          import os
+          from pathlib import Path
+          assert os.getuid() == 1000
+          for name in ("workspace", "state", "profile"):
+              path = Path("/data") / name
+              assert path.is_dir() and path.stat().st_uid == 1000
+          marker = Path("/data/workspace/fly-persistence-check.txt")
+          marker.write_text("synthetic persistence fixture")
+          seen = set()
+          for process in Path("/proc").iterdir():
+              if not process.name.isdigit():
+                  continue
+              try:
+                  command = (process / "cmdline").read_bytes().split(b"\0")
+                  if not command:
+                      continue
+                  is_app = any(part.endswith((b"/supervisord", b"/desktop-bridge", b"/chromium"))
+                               or part == b"coding_tools_mcp" for part in command)
+                  if is_app:
+                      assert process.stat().st_uid == 1000
+                      seen.add(command[0])
+              except FileNotFoundError:
+                  pass
+          assert len(seen) >= 2
+          import psycopg
+          print("Non-root runtime, mounted state and prepared Postgres driver verified")'
+      - name: Restart and verify volume persistence
+        run: |
+          docker restart bridge-fly
+          ready=0
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:8080/healthz; then ready=1; break; fi
+            sleep 2
+          done
+          test "$ready" = 1
+          docker exec --user bridge bridge-fly python3 -c \
+            'from pathlib import Path; assert Path("/data/workspace/fly-persistence-check.txt").read_text() == "synthetic persistence fixture"'
+      - name: Reject an unsafe volume child before launching the application
+        run: |
+          docker volume create bridge-fly-invalid
+          docker run --rm --user root --entrypoint python3 \
+            --mount type=volume,source=bridge-fly-invalid,target=/data,volume-nocopy \
+            desktop-bridge:fly -c 'import os; os.symlink("/etc", "/data/profile")'
+          if docker run --rm \
+            --mount type=volume,source=bridge-fly-invalid,target=/data,volume-nocopy \
+            desktop-bridge:fly true; then
+            echo 'Unsafe symlink volume was incorrectly accepted'
+            exit 1
+          fi
+      - name: Collect runtime logs
+        if: always()
+        run: |
+          mkdir -p artifacts
+          docker logs bridge-fly > artifacts/fly-image.log 2>&1 || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: fly-image-evidence
+          path: artifacts/fly-image.log
+          retention-days: 7
+      - name: Remove only disposable test resources
+        if: always()
+        run: |
+          docker rm -f bridge-fly || true
+          docker volume rm bridge-fly-data bridge-fly-invalid || true

@@ -156,3 +156,11 @@ upstream updates; a rebuild is not claimed to be byte-for-byte identical.
 
 [中文上手与演示](docs/quickstart.zh-CN.md) · [Architecture](docs/architecture.md) ·
 [Third-party credit](THIRD_PARTY_NOTICES.md)
+
+## Optional services and hosting
+
+Add owner-selected external tools with the [optional MCP registry](docs/optional-mcp.md).
+Services stay disabled until configured; provider/config changes require restart.
+[Prepare Fly deployment](docs/fly-deployment.md) without an account or credentials.
+The adapter/template is implemented; real vendor accounts and a Fly deployment
+still need separate setup and verification. Your existing MCP client owns the model loop.

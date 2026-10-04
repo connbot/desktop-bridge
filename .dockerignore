@@ -1,0 +1,14 @@
+# Allowlist only image inputs; never upload local data or credentials to a builder.
+**
+!Dockerfile
+!pyproject.toml
+!constraints.txt
+!README.md
+!src/
+!src/**
+!docker/
+!docker/**
+**/__pycache__
+**/*.pyc
+**/.env*
+**/.git

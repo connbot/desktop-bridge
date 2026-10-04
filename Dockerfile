@@ -1,4 +1,4 @@
-FROM python:3.12-slim-bookworm
+FROM python:3.12-slim-bookworm AS desktop
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 DISPLAY=:99 HOME=/home/bridge LANG=C.UTF-8
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential linux-libc-dev chromium xvfb x11vnc openbox xclip novnc supervisor tini fonts-noto-cjk \
@@ -23,3 +23,14 @@ VOLUME ["/data"]
 HEALTHCHECK --interval=10s --timeout=5s --start-period=90s CMD curl -fsS http://127.0.0.1:8080/healthz || exit 1
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
+
+# Only the explicit Fly target bootstraps root-owned fresh volume directories.
+# The launcher drops to bridge before supervisor or any application is executed.
+FROM desktop AS fly
+USER root
+COPY docker/fly-entrypoint.py /usr/local/bin/fly-entrypoint.py
+ENTRYPOINT ["/usr/bin/tini", "--", "python3", "/usr/local/bin/fly-entrypoint.py"]
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
+
+# Preserve the original non-root behavior for docker build / Compose by default.
+FROM desktop AS local

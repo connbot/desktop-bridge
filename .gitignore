@@ -10,3 +10,7 @@ state/
 workspace/
 build/
 dist/
+
+fly.toml
+
+config/plugins.json

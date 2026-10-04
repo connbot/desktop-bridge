@@ -35,6 +35,7 @@ from .personal import (
     ProfileUpdate,
     TaskUpdate,
 )
+from .plugins import MCPPlugins
 from .state import BridgeError, Session
 
 STATIC = Path(__file__).parent / "static"
@@ -72,8 +73,11 @@ def tool(name, description, properties=None, required=None):
 
 
 class Runtime:
-    def __init__(self, root: Path, *, desktop=None, browser=None, coding=None, context=None):
+    def __init__(
+        self, root: Path, *, desktop=None, browser=None, coding=None, context=None, plugins=None
+    ):
         self.workspace = root / "workspace"
+        self.plugins = plugins if plugins is not None else MCPPlugins.from_env(self.workspace)
         self.workspace.mkdir(parents=True, exist_ok=True)
         self.session = Session(root / "state" / "receipts.sqlite3")
         self.personal = PersonalStore(self.workspace)
@@ -89,11 +93,13 @@ class Runtime:
         self.coding = self.coding or Coding(self.workspace)
         await self.browser.connect()
         await self.coding.connect()
+        await self.plugins.start()
         self.ready = True
 
     async def close(self):
         self.ready = False
         await self.session.transition("stopped")
+        await self.plugins.close()
         if self.coding:
             await self.coding.close()
         if self.browser:
@@ -207,6 +213,7 @@ class Runtime:
                         inputSchema=schema,
                     )
                 )
+        tools.extend(self.plugins.tools())
         return tools
 
     async def call(self, name, args):
@@ -315,6 +322,24 @@ class Runtime:
                     return types.CallToolResult.model_validate(ticket["cached"])
                 result = await drain_on_cancel(self.coding.call(name.removeprefix("coding_"), args))
                 # Receipts can contain file contents. The state volume is private.
+                ticket["result"] = result.model_dump(mode="json")
+                return result
+        if name.startswith("mcp_"):
+            if not self.plugins.owns(name):
+                raise BridgeError("UNKNOWN_TOOL", "Unknown or disallowed optional MCP tool")
+            action_id, payload = self.plugins.unpack(args)
+            # Upstream annotations are untrusted: every optional tool is treated
+            # as mutating and must pass the same ownership/receipt boundary.
+            fingerprint = {
+                "tool": name, "arguments": payload,
+                "plugin_target": self.plugins.target_identity(name),
+            }
+            async with session.action(action_id, fingerprint) as ticket:
+                if "cached" in ticket:
+                    return types.CallToolResult.model_validate(ticket["cached"])
+                result = await drain_on_cancel(self.plugins.call(name, payload))
+                if session.mode == "private":
+                    raise BridgeError("PRIVATE_TAKEOVER", "Upstream result hidden during private takeover")
                 ticket["result"] = result.model_dump(mode="json")
                 return result
         raise BridgeError("UNKNOWN_TOOL", name)
@@ -499,6 +524,11 @@ def create_app(
             "ready": runtime.ready,
             "context_store": runtime.context.status(),
         }
+
+    @app.get("/api/plugins")
+    async def plugins(request: Request):
+        ui(request)
+        return runtime.plugins.status()
 
     @app.post("/api/control/{mode}")
     async def control(mode: str, request: Request):

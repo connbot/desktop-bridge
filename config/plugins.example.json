@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "servers": [
+    {
+      "id": "agentmail",
+      "enabled": false,
+      "url": "https://mcp.agentmail.to/mcp",
+      "allowed_tools": [],
+      "headers": [
+        {"name": "x-api-key", "value_env": "AGENTMAIL_API_KEY", "prefix": ""}
+      ]
+    },
+    {
+      "id": "phone",
+      "enabled": false,
+      "url": "https://mcp.vapi.ai/mcp",
+      "allowed_tools": [],
+      "headers": [
+        {"name": "Authorization", "value_env": "VAPI_API_KEY", "prefix": "Bearer "}
+      ]
+    },
+    {
+      "id": "neon_admin",
+      "enabled": false,
+      "url": "https://mcp.neon.tech/mcp",
+      "allowed_tools": [],
+      "headers": [
+        {"name": "Authorization", "value_env": "NEON_API_KEY", "prefix": "Bearer "}
+      ]
+    }
+  ]
+}

@@ -235,8 +235,23 @@ async def run(restart):
                     results.append(
                         "Human takeover blocks AI writes; private mode blocks model observations"
                     )
+
                     # The actual user-facing noVNC UI, including interrupted/repeated controls.
-                    async with async_playwright() as pw:
+                    async def oauth_callback(reader, writer):
+                        await reader.readuntil(b"\r\n\r\n")
+                        payload = b"Authorization returned"
+                        writer.write(
+                            b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: "
+                            + str(len(payload)).encode()
+                            + b"\r\nConnection: close\r\n\r\n"
+                            + payload
+                        )
+                        await writer.drain()
+                        writer.close()
+                        await writer.wait_closed()
+
+                    callback_server = await asyncio.start_server(oauth_callback, "127.0.0.1", 43111)
+                    async with callback_server, async_playwright() as pw:
                         browser_ui = await pw.chromium.launch()
                         page = await browser_ui.new_page(viewport={"width": 1440, "height": 1000})
                         errors = []
@@ -264,10 +279,6 @@ async def run(restart):
                             "code_challenge_method": "S256",
                             "code_challenge": ui_challenge,
                         }
-                        await page.route(
-                            "http://127.0.0.1:43111/callback**",
-                            lambda route: route.fulfill(body="Authorization returned"),
-                        )
                         await page.goto(URL + "/authorize?" + urlencode(ui_params))
                         await page.get_by_label("Owner access token").fill(OWNER)
                         await page.get_by_role("button", name="Open workspace").click()
@@ -361,7 +372,9 @@ async def run(restart):
                             const c=document.querySelector('#screen canvas');
                             if(!c || c.width!==1280)return false;
                             const d=c.getContext('2d').getImageData(0,0,1280,800).data;
-                            return d[0]!==d[1280*400*4];
+                            const colors=new Set();
+                            for(let i=0;i<d.length;i+=400)colors.add(`${d[i]},${d[i+1]},${d[i+2]}`);
+                            return colors.size>30;
                         }""",
                             timeout=20000,
                         )

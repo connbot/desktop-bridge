@@ -109,7 +109,9 @@ def test_oauth_roundtrip_and_mcp(app):
             "code_challenge": challenge,
             "state": "original",
         }
-        assert c.get("/authorize", params=params).status_code == 200
+        consent = c.get("/authorize", params=params)
+        assert consent.status_code == 200
+        assert "form-action" not in consent.headers["content-security-policy"]
         response = c.post(
             "/authorize", data={**params, "csrf": headers["X-CSRF-Token"]}, follow_redirects=False
         )

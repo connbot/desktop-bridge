@@ -18,7 +18,8 @@ serve the same X display: 5900 permits input; 5901 is server-enforced view-only.
 Both listen on loopback and are only reached through authenticated WebSockets.
 Cua connects internally to the control port. A small X11 adapter converts scroll
 into RFB wheel buttons because the pinned upstream VNC backend uses arrow keys
-for a macOS VNC compatibility case. This is tested as an integration boundary.
+for a macOS VNC compatibility case. The shared desktop and Unicode input are tested end-to-end; every possible
+GUI action and third-party application is not exhaustively certified.
 Chinese text uses the local UTF-8 X clipboard, followed by a Cua paste hotkey.
 
 Playwright connects to that exact Chromium via loopback CDP. Coding Tools runs

@@ -18,10 +18,12 @@ from mcp.server.lowlevel import Server
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import ValidationError
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.routing import Route
 
 from .auth import Auth
 from .backends import Browser, Coding, Desktop
+from .middleware import BodyLimitMiddleware
 from .models import BrowserAction, DesktopAction
 from .state import BridgeError, Session
 
@@ -329,6 +331,12 @@ def create_app(
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.runtime, app.state.auth = runtime, auth
+    app.add_middleware(BodyLimitMiddleware)
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=[urlsplit(base_url).hostname, "localhost", "127.0.0.1"],
+        www_redirect=False,
+    )
 
     @app.exception_handler(BridgeError)
     async def bridge_error(request, error):
@@ -359,8 +367,14 @@ def create_app(
         result.headers["Referrer-Policy"] = "no-referrer"
         result.headers["X-Frame-Options"] = "DENY"
         result.headers["Content-Security-Policy"] = (
-            "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'"
+            "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; form-action 'self'"
         )
+        if request.url.path == "/authorize":
+            # OAuth approvals redirect to an explicitly registered client URI.
+            # form-action 'self' also blocks that 303 in Chromium.
+            result.headers["Content-Security-Policy"] = result.headers[
+                "Content-Security-Policy"
+            ].replace("; form-action 'self'", "")
         return result
 
     def ui(request, mutate=False):
@@ -387,6 +401,12 @@ def create_app(
     async def login(request: Request):
         auth.throttle("login:" + (request.client.host if request.client else "unknown"))
         body = await request.json()
+        if (
+            not isinstance(body, dict)
+            or not isinstance(body.get("token"), str)
+            or len(body["token"]) > 256
+        ):
+            raise BridgeError("UNAUTHORIZED", "Invalid owner token")
         sid, csrf = auth.login(str(body.get("token", "")))
         response = JSONResponse({"csrf": csrf})
         response.set_cookie(

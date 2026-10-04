@@ -76,7 +76,7 @@ class Auth:
         if not isinstance(redirects, list) or not 1 <= len(redirects) <= 10:
             raise BridgeError("INVALID_CLIENT", "Supply 1–10 redirect_uris")
         for uri in redirects:
-            if not isinstance(uri, str) or len(uri) > 2048:
+            if not isinstance(uri, str) or len(uri) > 2048 or any(ord(c) <= 32 for c in uri):
                 raise BridgeError("INVALID_CLIENT", "Invalid redirect URI")
             parsed = urlsplit(uri)
             if (

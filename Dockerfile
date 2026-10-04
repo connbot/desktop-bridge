@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-dejavu-core xterm curl ca-certificates git ripgrep fd-find nodejs npm \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s /usr/bin/fdfind /usr/local/bin/fd \
+    && mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix \
     && useradd --create-home --uid 1000 bridge \
     && mkdir -p /data/workspace /data/state /data/profile /home/bridge/.config/openbox \
     && chown -R bridge:bridge /data /home/bridge

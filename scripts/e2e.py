@@ -12,7 +12,7 @@ import io
 import json
 import uuid
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 import httpx
 from mcp import ClientSession
@@ -241,9 +241,54 @@ async def run(restart):
                         page = await browser_ui.new_page(viewport={"width": 1440, "height": 1000})
                         errors = []
                         page.on("pageerror", lambda e: errors.append(str(e)))
-                        await page.goto(URL)
+                        # Exercise the actual browser approval journey, starting logged out.
+                        ui_client = (
+                            await http.post(
+                                "/register",
+                                json={
+                                    "client_name": "Browser onboarding test",
+                                    "redirect_uris": ["http://127.0.0.1:43111/callback"],
+                                },
+                            )
+                        ).json()
+                        ui_verifier = "u" * 64
+                        ui_challenge = (
+                            base64.urlsafe_b64encode(hashlib.sha256(ui_verifier.encode()).digest())
+                            .decode()
+                            .rstrip("=")
+                        )
+                        ui_params = {
+                            "client_id": ui_client["client_id"],
+                            "redirect_uri": ui_client["redirect_uris"][0],
+                            "response_type": "code",
+                            "code_challenge_method": "S256",
+                            "code_challenge": ui_challenge,
+                        }
+                        await page.route(
+                            "http://127.0.0.1:43111/callback**",
+                            lambda route: route.fulfill(body="Authorization returned"),
+                        )
+                        await page.goto(URL + "/authorize?" + urlencode(ui_params))
                         await page.get_by_label("Owner access token").fill(OWNER)
                         await page.get_by_role("button", name="Open workspace").click()
+                        await page.get_by_role("button", name="Approve for one hour").click()
+                        await page.wait_for_url("http://127.0.0.1:43111/callback**")
+                        ui_code = parse_qs(urlsplit(page.url).query)["code"][0]
+                        ui_grant = await http.post(
+                            "/token",
+                            data={
+                                "grant_type": "authorization_code",
+                                "client_id": ui_client["client_id"],
+                                "redirect_uri": ui_params["redirect_uri"],
+                                "code": ui_code,
+                                "code_verifier": ui_verifier,
+                            },
+                        )
+                        assert ui_grant.status_code == 200, ui_grant.text
+                        results.append(
+                            "Browser OAuth onboarding: login, explicit approval and bound token exchange"
+                        )
+                        await page.goto(URL)
                         await page.locator("#screen canvas").wait_for(timeout=20000)
                         await page.get_by_role("button", name="Take control", exact=True).click()
                         await page.locator("#status").filter(has_text="HUMAN").wait_for()
@@ -307,11 +352,18 @@ async def run(restart):
                         assert "VIEW_ONLYz" in snap["snapshot"], snap
                         await page.get_by_role("button", name="Hand back to AI").click()
                         await page.locator("#status").filter(has_text="AGENT").wait_for()
-                        await page.wait_for_function(
-                            "document.querySelector('#screen').dataset.connected === 'true'"
-                        )
+                        await page.locator('#screen[data-connected="true"]').wait_for()
                         results.append(
                             "Server-enforced view-only rejects injected input; human channel accepts it"
+                        )
+                        await page.wait_for_function(
+                            """() => {
+                            const c=document.querySelector('#screen canvas');
+                            if(!c || c.width!==1280)return false;
+                            const d=c.getContext('2d').getImageData(0,0,1280,800).data;
+                            return d[0]!==d[1280*400*4];
+                        }""",
+                            timeout=20000,
                         )
                         await page.screenshot(path=str(OUT / "viewer.png"), full_page=True)
                         assert not errors, errors

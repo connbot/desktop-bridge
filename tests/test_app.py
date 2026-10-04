@@ -238,3 +238,23 @@ async def test_cancellation_drains_before_releasing():
     finish.set()
     with pytest.raises(asyncio.CancelledError):
         await task
+
+
+def test_limits_hosts_and_websocket_auth(app):
+    from starlette.websockets import WebSocketDisconnect
+
+    with TestClient(app) as c:
+        assert c.get("/healthz", headers={"Host": "evil.example"}).status_code == 400
+        assert c.post("/register", content=b"x" * (4 * 1024 * 1024 + 1)).status_code == 413
+        assert c.post("/api/login", json=[]).status_code == 401
+        assert c.post("/register", json=[]).status_code == 400
+        with pytest.raises(WebSocketDisconnect):
+            with c.websocket_connect("/desktop/control", headers={"Origin": "http://testserver"}):
+                pytest.fail("Unauthenticated websocket accepted")
+        login(c)
+        with pytest.raises(WebSocketDisconnect):
+            with c.websocket_connect("/desktop/view", headers={"Origin": "https://evil.example"}):
+                pytest.fail("Foreign-origin websocket accepted")
+        with pytest.raises(WebSocketDisconnect):
+            with c.websocket_connect("/desktop/control", headers={"Origin": "http://testserver"}):
+                pytest.fail("Human write socket accepted while agent owns control")

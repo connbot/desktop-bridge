@@ -53,3 +53,16 @@ in the public CI history, rather than represented as successful runs.
 
 The deliverable is a working self-hosted execution layer with reproducible
 acceptance tests, not a managed hosted service or a model-subscription proxy.
+
+
+## October 4 afternoon updates
+
+At commit `6c29d2487a6017a35dd457743898751aefdf64a1`, 53 unit/security
+tests and all three clean Docker integration jobs passed:
+https://github.com/connbot/desktop-bridge/actions/runs/37226260176 .
+The separate real Cloudflare HTTPS/OAuth/JSON-MCP/WebSocket smoke passed:
+https://github.com/connbot/desktop-bridge/actions/runs/37226260097 .
+The owner subsequently confirmed successful ChatGPT connection and live tool
+calls. This is owner-reported client validation, not an autonomous task-success
+benchmark. Personal task examples remain examples until their actual outputs
+and execution evidence are demonstrated.

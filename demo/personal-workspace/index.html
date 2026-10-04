@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Everyday Studio · Desktop Bridge</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<aside class="sidebar">
+ <a class="brand" href="#"><span class="brand-mark">d<span>↗</span></span><span>Desktop<br><strong>Bridge</strong></span></a>
+ <p class="nav-label">YOUR PERSONAL WORKSPACE</p>
+ <nav aria-label="Personal tools">
+ <button class="nav-item active" aria-label="Weekend planner" id="nav-weekend" data-tab="weekend" aria-pressed="true"><span>☀</span>Weekend planner<i>01</i></button>
+ <button class="nav-item" aria-label="Spending snapshot" id="nav-spending" data-tab="spending" aria-pressed="false"><span>◔</span>Spending snapshot<i>02</i></button>
+ <button class="nav-item" aria-label="Packing checklist" id="nav-packing" data-tab="packing" aria-pressed="false"><span>☑</span>Packing checklist<i>03</i></button>
+ </nav>
+ <div class="sidebar-note"><span class="tiny-label">MADE FOR THIS MOMENT</span><h3>A little tool.<br>A little less friction.</h3><p>Useful things your personal agent can create, right in your own workspace.</p></div>
+ <div class="engine"><div class="engine-icon">&lt;/&gt;</div><div><span>BUILT WITH</span><strong>Coding Tools MCP</strong></div></div>
+ <p class="sidebar-foot">Browser + desktop + files<br>One connected computer</p>
+</aside>
+<main>
+ <header><div><span class="breadcrumb">EVERYDAY STUDIO</span><span class="divider">/</span><span id="current-label">Weekend planner</span></div><span class="sample-pill"><b></b> SAMPLE WORKSPACE</span></header>
+ <section id="weekend" class="view">
+ <div class="intro"><div><p class="eyebrow">LESS PLANNING. MORE LIVING.</p><h1>Make room for<br>the weekend<span>.</span></h1><p class="sub">A coast-side escape for two, with a plan you can actually adjust.</p></div><div class="coast-art" aria-label="Decorative coastal landscape illustration"><div class="sun"></div><div class="island far"></div><div class="island near"></div><div class="wave one"></div><div class="wave two"></div><div class="art-label">TAKE THE SCENIC ROUTE <span>↗</span></div></div></div>
+ <div class="weekend-grid">
+ <section class="card itinerary"><div class="card-heading"><div><p class="eyebrow">YOUR MINI ITINERARY</p><h2>Two days, a fresh perspective</h2></div><span class="round-icon">↗</span></div><div class="timeline"><article><time>SAT<br><b>10:00</b></time><div class="dot"></div><div><h3>Arrive by the coast</h3><p>Drop your bags. Leave the afternoon open.</p></div><span class="activity-tag">SLOW START</span></article><article><time>SAT<br><b>14:00</b></time><div class="dot orange"></div><div><h3 id="afternoon-title">Visit a local museum</h3><p id="afternoon-desc">An easy afternoon with room to explore.</p></div><span id="activity-price" class="price">$30</span></article><article><time>SUN<br><b>09:30</b></time><div class="dot"></div><div><h3>Coffee, sea air, home</h3><p>A gentle morning before the trip back.</p></div><span class="activity-tag">NO RUSH</span></article></div><button class="text-button" aria-label="Choose a free afternoon" id="free-afternoon">Choose a free afternoon <span>→</span></button></section>
+ <section class="card budget"><p class="eyebrow">KEEP IT COMFORTABLE</p><div class="budget-title"><h2>Your weekend budget</h2><span>USD · 2 people</span></div><label class="budget-input" for="budget"><span>$</span><input id="budget" aria-label="Weekend budget" type="number" min="0" step="10" value="420"></label><div class="budget-track"><span id="budget-fill"></span></div><dl><div><dt>Transport + stay</dt><dd>$276</dd></div><div><dt>Food + activities</dt><dd id="food-activities">$94</dd></div><div class="remaining"><dt>Room to spare</dt><dd id="remaining">$50</dd></div></dl><p class="estimate">Illustrative estimates, not live quotes.</p></section>
+ </div>
+ <div class="bottom-line"><span>✦</span><p>Built for your plans. Yours to change.</p><span>3 useful tools · one workspace</span></div>
+ </section>
+ <section id="spending" class="view" hidden>
+ <div class="page-intro"><p class="eyebrow">A LITTLE CLARITY GOES A LONG WAY</p><h1>Small spends.<br>A clearer picture<span>.</span></h1><p class="sub">A real calculation from a clearly labeled sample CSV.</p></div>
+ <div class="spending-grid"><section class="card total-card"><p class="eyebrow">SAMPLE SPENDING</p><div id="total-spending" class="big-number">$0.00</div><p><span id="transaction-count">0</span> transactions · Oct 1–4</p><div class="total-decor">↗</div><div class="computed"><span>✓</span> Calculated with Coding Tools MCP</div></section><section class="card categories"><div class="card-heading"><h2>Where it went</h2><span class="small-muted">USD</span></div><div id="category-bars"></div><div class="source-note"><span>⌘</span><div><strong>From file to useful insight</strong><p>sample-spending.csv → analyze.py → spending-summary.json</p></div></div></section></div>
+ <section class="card transactions"><div class="card-heading"><h2>The underlying details</h2><span class="small-muted">Sample data only</span></div><table><thead><tr><th>Date</th><th>Description</th><th>Category</th><th>Amount</th></tr></thead><tbody id="transaction-rows"></tbody></table></section>
+ </section>
+ <section id="packing" class="view" hidden>
+ <div class="page-intro"><p class="eyebrow">THE LITTLE THINGS, TAKEN CARE OF</p><h1>Ready when<br>you are<span>.</span></h1><p class="sub">A simple checklist that keeps the last-minute scramble small.</p></div>
+ <div class="packing-grid"><section class="card packing-list"><div class="card-heading"><h2>A little preparation</h2><span id="packing-progress" class="progress-pill">0 / 5 ready</span></div><div id="checklist"></div><form id="packing-form"><label for="packing-note" class="visually-hidden">Packing note</label><input id="packing-note" placeholder="One more thing to remember…" autocomplete="off"><button class="solid-button" aria-label="Add item" type="submit">Add item <span>+</span></button></form><p id="packing-feedback" class="feedback" aria-live="polite">Your checklist stays in this browser.</p></section><section class="file-card"><span class="folder-icon">▱</span><p class="eyebrow">A PLACE FOR EVERYTHING</p><h2>The work stays<br>with you.</h2><p>Readable files. Reusable tools.<br>One organized workspace.</p><ul><li><span>↳</span> tools / index.html</li><li><span>↳</span> data / sample-spending.csv</li><li><span>↳</span> outputs / spending-summary.json</li><li><span>↳</span> plans / weekend-plan.md</li><li><span>↳</span> plans / packing-checklist.md</li></ul><div class="file-card-bottom">CREATED THROUGH CODING TOOLS MCP</div></section></div>
+ </section>
+ <footer><span>REHEARSED CAPABILITY DEMO · SAMPLE DATA</span><span>Real MCP tools. Real browser. Real files.</span></footer>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

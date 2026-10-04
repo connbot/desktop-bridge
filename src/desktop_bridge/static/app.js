@@ -85,3 +85,14 @@ async function files(){
 }
 $('refresh-files').addEventListener('click',files);
 refresh();
+
+const taskExamples = {
+  planner: 'Help me plan a weekend. Ask for my location, available time, budget, and interests if missing. Use the browser to check sources, distinguish facts from assumptions, then use Coding Tools MCP to create an editable plan in the workspace. Do not book or pay for anything.',
+  files: 'Help organize files I provide in the workspace. First inspect and propose a structure. Use Coding Tools MCP to make a non-destructive organized copy and an index. Preserve originals and flag uncertain classifications. Ask me for files if none are available.',
+  tool: 'Build a small personal tool for a routine I describe. Ask what it should do if needed. Use Coding Tools MCP to create the files and run checks, open the result in the shared browser, test its controls, and show me how to download it. Use clearly labeled sample data until I provide my own.'
+};
+for (const button of document.querySelectorAll('[data-task]')) button.addEventListener('click', async () => {
+  const prompt = taskExamples[button.dataset.task];
+  try { await navigator.clipboard.writeText(prompt); $('task-feedback').textContent = 'Prompt copied. Paste it into your connected AI chat to begin.'; }
+  catch { $('task-feedback').textContent = prompt; }
+});

@@ -392,6 +392,9 @@ async def run(restart):
                         await page.get_by_role("button", name="Copy endpoint").click()
                         await page.locator("#copy-feedback").filter(has_text="Endpoint copied").wait_for()
                         assert await page.evaluate("navigator.clipboard.readText()") == URL + "/mcp"
+                        await page.get_by_role("button", name="Build a personal tool", exact=True).click()
+                        assert "Use Coding Tools MCP" in await page.evaluate("navigator.clipboard.readText()")
+                        await page.locator("#task-feedback").filter(has_text="Prompt copied").wait_for()
                         await page.get_by_role("button", name="Full screen", exact=True).click()
                         await page.wait_for_function("() => !!document.fullscreenElement")
                         await page.evaluate("document.exitFullscreen()")

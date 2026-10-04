@@ -4,7 +4,7 @@ A self-hosted external computer for your AI client. One MCP endpoint, one headed
 Chromium desktop, a persistent workspace, and server-enforced human takeover.
 
 **Status: runnable self-hosted Hackathon preview.** The same implementation passed
-33 unit/security tests and three clean Docker end-to-end runs, including real
+53 unit/security tests and three clean Docker end-to-end runs, including real
 browser OAuth approval, desktop input, view-only enforcement, and restart
 persistence. [Evidence and limits](docs/validation.md).
 
@@ -34,8 +34,9 @@ renew. Disconnect & revoke revokes all viewer sessions and OAuth grants.
 For remote ChatGPT/Claude connectors, deploy on your own host behind HTTPS and
 set BRIDGE_PUBLIC_URL to the exact public origin. Keep the container port bound
 to loopback; proxy only the gateway port, including WebSockets. Existing client
-accounts and supported connector access are required. Real ChatGPT/Claude UI
-integration has not yet been verified, even when protocol tests pass.
+accounts and supported connector access are required. The owner confirmed successful ChatGPT connection and live tool calls on
+October 4, 2026. Claude account onboarding and broad autonomous task success
+are not verified by our protocol tests.
 
 ## On-demand GitHub Actions preview
 

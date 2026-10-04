@@ -11,7 +11,7 @@ Cloudflare 提供 HTTPS 地址，ChatGPT 通过 OAuth + Streamable HTTP 调用�
    建议使用独立的随机密码，不要复用其他账号的密码。只在 GitHub 的 secret 输入框和本服务的登录页输入，不要发到聊天、
    workflow inputs、Issue、代码或日志。它允许登录并批准电脑访问。
 2. 打开 Actions → **Launch MCP preview** → Run workflow。
-   `mode=preview`，`tunnel=quick`，默认运行 60 分钟。可以选 30/120/300 分钟。
+   `mode=preview`，`tunnel=quick`，默认运行 60 分钟。可以选 30/120/350 分钟。
    `public_url` 留空。不需要 Cloudflare 账号或 Cloudflare token。
 3. 等待构建、隧道就绪和真实公网烟测。展开 **Start authenticated HTTPS MCP preview**
    步骤或打开运行 Summary，复制 `MCP endpoint`，形如
@@ -51,7 +51,7 @@ ChatGPT 中是否显示创建连接入口取决于账户、工作区权限和当
 
 - 这套 workflow 用来开发、测试 Agent Workspace 和 Hackathon 演示；不循环自启，
   不充当长期生产托管服务。遵守 [GitHub Actions 使用条款](https://docs.github.com/en/site-policy/github-terms/github-terms-for-additional-products-and-features#actions)。
-- GitHub-hosted job 最长 6 小时；本 workflow 最长 330 分钟，互动时长最多 300 分钟，
+- GitHub-hosted job 最长 6 小时；本 workflow 最长 360 分钟，互动时长最多 350 分钟，
   为构建、验证和清理留出余量。取消 workflow 会关闭隧道和电脑。
 - Quick Tunnel 每次地址不同、没有可用性保证、最多 200 个并发请求且不支持 SSE。
   本服务的 Streamable HTTP POST 返回 JSON，不依赖 SSE；实时桌面使用 WebSocket。

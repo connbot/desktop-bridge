@@ -13,9 +13,9 @@ on:
         options: [quick, named]
         default: quick
       minutes:
-        description: 'Preview lifetime after readiness (10–300 minutes)'
+        description: 'Preview lifetime after readiness (10–350 minutes; leave setup/cleanup room within the 6-hour job limit)'
         type: choice
-        options: ['30', '60', '120', '300']
+        options: ['30', '60', '120', '300', '350']
         default: '60'
       public_url:
         description: 'Named tunnel only: https://your-hostname (no /mcp suffix)'
@@ -32,7 +32,7 @@ concurrency:
 jobs:
   preview:
     runs-on: ubuntu-latest
-    timeout-minutes: 330
+    timeout-minutes: 360
     env:
       PREVIEW_MODE: ${{ github.event_name == 'push' && 'verify' || inputs.mode }}
       TUNNEL_KIND: ${{ github.event_name == 'push' && 'quick' || inputs.tunnel }}

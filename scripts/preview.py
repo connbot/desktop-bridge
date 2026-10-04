@@ -35,8 +35,8 @@ def configuration(env):
     minutes = int(env.get("PREVIEW_MINUTES", "60"))
     if mode not in SUPPORTED_MODES or kind not in {"quick", "named"}:
         raise ValueError("Unsupported preview mode or tunnel kind")
-    if not 10 <= minutes <= 300:
-        raise ValueError("Preview lifetime must be 10–300 minutes")
+    if not 10 <= minutes <= 350:
+        raise ValueError("Preview lifetime must be 10–350 minutes")
     owner = env.get("BRIDGE_OWNER_TOKEN", "")
     if mode == "preview" and (
         not 8 <= len(owner) <= 256 or not owner.strip()

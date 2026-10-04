@@ -1,0 +1,17 @@
+services:
+  desktop:
+    build: .
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      BRIDGE_OWNER_TOKEN: ${BRIDGE_OWNER_TOKEN:?Run the setup script first}
+      BRIDGE_PUBLIC_URL: ${BRIDGE_PUBLIC_URL:-http://localhost:8080}
+    volumes:
+      - desktop-data:/data
+    shm_size: 1gb
+    mem_limit: 3g
+    cpus: 2
+    pids_limit: 512
+    restart: unless-stopped
+volumes:
+  desktop-data:

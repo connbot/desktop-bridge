@@ -1,0 +1,68 @@
+name: Validate desktop bridge
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -e '.[test]'
+      - run: ruff check .
+      - run: pytest -q
+  desktop-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build actual desktop image
+        run: docker build -t desktop-bridge:test .
+      - name: Start isolated test desktop
+        run: |
+          docker run -d --name bridge --shm-size=1g -p 127.0.0.1:8080:8080 \
+            -e BRIDGE_OWNER_TOKEN=test-only-owner-token-not-for-deployment-123 \
+            -e BRIDGE_PUBLIC_URL=http://127.0.0.1:8080 desktop-bridge:test
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:8080/healthz; then exit 0; fi
+            sleep 2
+          done
+          docker logs bridge
+          exit 1
+      - name: Install test client
+        run: pip install 'httpx==0.28.1' 'mcp==1.29.0' 'playwright==1.62.0' 'Pillow==12.2.0'
+      - run: playwright install --with-deps chromium
+      - name: Real GUI, browser, coding, OAuth, takeover and viewer tests
+        run: python scripts/e2e.py
+      - name: Restart and verify persistence
+        run: |
+          docker restart bridge
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8080/healthz; then break; fi
+            sleep 2
+          done
+          python scripts/e2e.py --restart-check
+      - name: Collect logs
+        if: always()
+        run: mkdir -p artifacts && docker logs bridge > artifacts/container.log 2>&1 || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-evidence
+          path: artifacts/
+          retention-days: 7
+      - name: Clean up test container
+        if: always()
+        run: docker rm -f bridge || true

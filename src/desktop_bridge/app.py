@@ -28,6 +28,20 @@ from .state import BridgeError, Session
 STATIC = Path(__file__).parent / "static"
 
 
+async def drain_on_cancel(operation):
+    """A disconnected request must not release the lease while its GUI thread runs."""
+    task = asyncio.create_task(operation)
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        # Cancellation cannot undo a submitted external effect. Keep ownership
+        # until the backend has stopped, then retain an unknown-outcome receipt.
+        try:
+            await task
+        finally:
+            raise
+
+
 def text_result(value):
     return [types.TextContent(type="text", text=json.dumps(value, ensure_ascii=False))]
 
@@ -71,6 +85,23 @@ class Runtime:
         if self.browser:
             await self.browser.close()
         self.session.close()
+
+    async def control(self, mode):
+        self.session.control_pending = True
+        try:
+            await self.session.transition(mode)
+            if mode != "agent":
+                async with self.session.lock:
+                    if self.coding and hasattr(self.coding, "cancel_running"):
+                        failures = await drain_on_cancel(self.coding.cancel_running())
+                        if failures:
+                            self.session.event(
+                                "warning", "Some managed processes could not be stopped"
+                            )
+                            return {**self.session.status(), "process_cleanup_failed": True}
+        finally:
+            self.session.control_pending = False
+        return self.session.status()
 
     def tools(self):
         tools = [
@@ -152,7 +183,9 @@ class Runtime:
                 await session.transition("agent")
             return text_result(session.status())
         if name == "session_stop":
-            return text_result(await session.transition("stopped"))
+            if session.mode in {"human", "private"}:
+                raise BridgeError("CONTROL_NOT_OWNED", "Cannot change human takeover state")
+            return text_result(await self.control("stopped"))
         if name in {"desktop_screenshot", "browser_snapshot"}:
             async with session.lock:
                 if session.mode == "private":
@@ -208,7 +241,7 @@ class Runtime:
                 if "cached" in ticket:
                     return text_result({**ticket["cached"], "replayed": True})
                 backend = self.desktop if name == "desktop_action" else self.browser
-                ticket["result"] = await backend.perform(payload)
+                ticket["result"] = await drain_on_cancel(backend.perform(payload))
                 return text_result(ticket["result"])
         if name.startswith("coding_"):
             args = dict(args)
@@ -216,7 +249,7 @@ class Runtime:
             async with session.action(action_id, {"tool": name, "arguments": args}) as ticket:
                 if "cached" in ticket:
                     return types.CallToolResult.model_validate(ticket["cached"])
-                result = await self.coding.call(name.removeprefix("coding_"), args)
+                result = await drain_on_cancel(self.coding.call(name.removeprefix("coding_"), args))
                 # Receipts can contain file contents. The state volume is private.
                 ticket["result"] = result.model_dump(mode="json")
                 return result
@@ -280,7 +313,7 @@ def create_app(
                 runtime.session.mode == "agent"
                 and time.monotonic() - runtime.session.last_activity > 1800
             ):
-                await runtime.session.transition("paused")
+                await runtime.control("paused")
 
     @asynccontextmanager
     async def lifespan(app):
@@ -381,13 +414,13 @@ def create_app(
     @app.post("/api/control/{mode}")
     async def control(mode: str, request: Request):
         ui(request, True)
-        return await runtime.session.transition(mode)
+        return await runtime.control(mode)
 
     @app.post("/api/logout")
     async def logout(request: Request):
         ui(request, True)
         auth.revoke()
-        await runtime.session.transition("paused")
+        await runtime.control("paused")
         response = JSONResponse({"ok": True})
         response.delete_cookie("bridge_session")
         return response
@@ -490,7 +523,11 @@ def create_app(
             or mode not in {"view", "control"}
             or (
                 mode == "control"
-                and (session.mode not in {"human", "private"} or session.lock.locked())
+                and (
+                    session.mode not in {"human", "private"}
+                    or session.lock.locked()
+                    or session.control_pending
+                )
             )
         ):
             await websocket.close(code=1008)
@@ -547,7 +584,7 @@ def create_app(
                 await writer.wait_closed()
             try:
                 await websocket.close()
-            except RuntimeError:
+            except (RuntimeError, WebSocketDisconnect):
                 pass
 
     class MCPApp:

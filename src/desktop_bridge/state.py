@@ -38,6 +38,7 @@ class Session:
         self.mode = "ready"  # First session_start is allowed; a user pause cannot be overridden.
         self.epoch = 0
         self.lock = asyncio.Lock()
+        self.control_pending = False
         self.observations: dict[str, tuple[int, float]] = {}
         self.observation_ttl = observation_ttl
         self.last_activity = time.monotonic()
@@ -49,7 +50,7 @@ class Session:
             "session_id": self.id,
             "state": self.mode.upper(),
             "epoch": self.epoch,
-            "in_flight": self.lock.locked(),
+            "in_flight": self.lock.locked() or self.control_pending,
             "resolution": {"width": 1280, "height": 800},
             "capabilities": {
                 "memory_resume": False,

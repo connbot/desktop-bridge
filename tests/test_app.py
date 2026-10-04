@@ -208,3 +208,33 @@ def test_action_validation(payload):
 
     with pytest.raises(ValidationError):
         DesktopAction.model_validate(payload)
+
+
+async def test_agent_cannot_exit_private_by_stop(app):
+    r = app.state.runtime
+    await r.session.transition("private")
+    with pytest.raises(BridgeError):
+        await r.call("session_stop", {})
+    assert r.session.mode == "private"
+    r.session.close()
+
+
+async def test_cancellation_drains_before_releasing():
+    import asyncio
+
+    from desktop_bridge.app import drain_on_cancel
+
+    started, finish = asyncio.Event(), asyncio.Event()
+
+    async def operation():
+        started.set()
+        await finish.wait()
+
+    task = asyncio.create_task(drain_on_cancel(operation()))
+    await started.wait()
+    task.cancel()
+    await asyncio.sleep(0)
+    assert not task.done()
+    finish.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task

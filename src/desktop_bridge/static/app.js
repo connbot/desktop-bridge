@@ -16,10 +16,13 @@ async function connectScreen(mode, force = false) {
   if (!force && rfb && screenKey === key) return;
   rfb?.disconnect(); rfb = null; screenKey = key;
   const {default:RFB} = await import('/novnc/core/rfb.js');
+  $('screen').dataset.connected = 'false';
   $('screen').replaceChildren();
   rfb = new RFB($('screen'), `${location.protocol==='https:'?'wss':'ws'}://${location.host}/desktop/${key}`);
+  rfb.addEventListener('connect', () => { if (rfb === connection) $('screen').dataset.connected = 'true'; });
   rfb.scaleViewport = true; rfb.resizeSession = false; rfb.viewOnly = key === 'view';
-  rfb.addEventListener('disconnect', () => { screenKey = ''; });
+  const connection = rfb;
+  rfb.addEventListener('disconnect', () => { if (rfb === connection) { screenKey = ''; $('screen').dataset.connected = 'false'; } });
   rfb.addEventListener('securityfailure', () => error(new Error('Desktop connection rejected. Sign in again.')));
 }
 function showEvents(events) {
@@ -34,7 +37,7 @@ async function refresh() {
     const s=await api('/api/status'); csrf=s.csrf;
     $('login').hidden=true; $('workspace').hidden=false;
     $('status').textContent=s.state; $('mcp-url').value=s.mcp_url; showEvents(s.events);
-    $('control-note').textContent=s.in_flight ? 'Waiting for an in-flight action. New AI actions are blocked after takeover. Previously launched shell processes may still run.' : s.state==='PRIVATE' ? 'Private takeover: AI observations and actions are blocked. You control the desktop.' : s.state==='HUMAN' ? 'You have control. AI writes are blocked until you hand back.' : s.state==='AGENT' ? 'AI has control. You are watching a server-enforced read-only stream.' : 'AI actions are paused. Hand back to AI to resume.';
+    $('control-note').textContent=s.in_flight ? 'Waiting for an in-flight action. New AI actions are blocked after takeover. Managed shell processes are being stopped. Detached external effects cannot be undone.' : s.state==='PRIVATE' ? 'Private takeover: AI observations and actions are blocked. You control the desktop.' : s.state==='HUMAN' ? 'You have control. AI writes are blocked until you hand back.' : s.state==='AGENT' ? 'AI has control. You are watching a server-enforced read-only stream.' : 'AI actions are paused. Hand back to AI to resume.';
     if (!s.in_flight) await connectScreen(s.state);
   } catch(e) {
     if (/Sign in|Login/.test(e.message)) loginView(); else error(e);

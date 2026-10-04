@@ -189,6 +189,15 @@ async def run(restart):
                     results.append(
                         "Coding Tools writes, reads, executes and exports real workspace file"
                     )
+                    running = await call(
+                        "coding_exec_command",
+                        {
+                            "cmd": "sleep 30",
+                            "yield_time_ms": 0,
+                            "bridge_action_id": "managed-sleep",
+                        },
+                    )
+                    assert running.structuredContent["status"] == "running"
                     await http.post("/api/control/human", headers=headers)
                     denied = await call(
                         "coding_exec_command",
@@ -202,6 +211,17 @@ async def run(restart):
                     for name in ["desktop_screenshot", "browser_snapshot", "artifacts_list"]:
                         assert (await call(name, allow_error=True)).isError
                     await http.post("/api/control/agent", headers=headers)
+                    polled = await call(
+                        "coding_write_stdin",
+                        {
+                            "command_id": running.structuredContent["command_id"],
+                            "chars": "",
+                            "yield_time_ms": 0,
+                            "bridge_action_id": "poll-canceled",
+                        },
+                    )
+                    assert polled.structuredContent["status"] != "running"
+                    results.append("Managed asynchronous shell process canceled during takeover")
                     results.append(
                         "Human takeover blocks AI writes; private mode blocks model observations"
                     )
@@ -225,6 +245,18 @@ async def run(restart):
                         await page.locator("#status").filter(has_text="AGENT").wait_for()
                         await page.get_by_role("button", name="Refresh", exact=True).click()
                         await page.get_by_role("link", name="acceptance.txt").wait_for()
+                        # Canvas existence alone is not proof of a working screen.
+                        await page.wait_for_function(
+                            """() => {
+                          const c = document.querySelector('#screen canvas');
+                          if (!c || c.width !== 1280 || c.height !== 800) return false;
+                          const p = c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+                          const colors = new Set();
+                          for (let i=0;i<p.length;i+=400) colors.add(`${p[i]},${p[i+1]},${p[i+2]}`);
+                          return colors.size > 30;
+                        }""",
+                            timeout=20000,
+                        )
                         await page.screenshot(path=str(OUT / "viewer.png"), full_page=True)
                         assert not errors, errors
                         await browser_ui.close()

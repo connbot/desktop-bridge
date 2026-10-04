@@ -17,9 +17,21 @@ from .state import BridgeError
 class Desktop:
     def __init__(self):
         # Pinned upstream handler; no independent GUI driver implementation.
-        from computer_server.handlers.vnc import VNCAutomationHandler
+        from computer_server.handlers.vnc import VNCAutomationHandler, _VNCConnection
+
+        class X11Connection(_VNCConnection):
+            def scroll(self, x, y):
+                # Upstream uses arrow keys for macOS VNC. X11 needs actual RFB
+                # wheel events, otherwise scrolling edits focused text fields.
+                def send(client):
+                    for count, positive, negative in ((y, 4, 5), (x, 7, 6)):
+                        for _ in range(abs(count)):
+                            client.mousePress(positive if count > 0 else negative)
+
+                return self._with_client(send)
 
         self.handler = VNCAutomationHandler(host="127.0.0.1", port=5900)
+        self.handler._conn = X11Connection("127.0.0.1", 5900)
 
     async def screenshot(self):
         result = await self.handler.screenshot()
@@ -134,6 +146,7 @@ class Coding:
         self.stack = AsyncExitStack()
         self.client = None
         self.tools = []
+        self.running_commands: set[str] = set()
 
     async def connect(self):
         import sys
@@ -143,6 +156,7 @@ class Coding:
             for key, value in os.environ.items()
             if key in {"PATH", "HOME", "LANG", "DISPLAY", "PYTHONPATH"}
         }
+        env["CODING_TOOLS_MCP_TELEMETRY"] = "off"
         streams = await self.stack.enter_async_context(
             stdio_client(
                 StdioServerParameters(
@@ -159,7 +173,36 @@ class Coding:
     async def call(self, name, arguments):
         if name not in {t.name for t in self.tools}:
             raise BridgeError("UNKNOWN_TOOL", "Unknown Coding Tools operation")
-        return await self.client.call_tool(name, arguments, read_timeout_seconds=None)
+        result = await self.client.call_tool(name, arguments, read_timeout_seconds=None)
+        info = result.structuredContent or {}
+        command_id = info.get("command_id")
+        if command_id:
+            if info.get("status") == "running":
+                self.running_commands.add(command_id)
+            else:
+                self.running_commands.discard(command_id)
+        return result
+
+    async def cancel_running(self):
+        failures = []
+        for command_id in list(self.running_commands):
+            try:
+                result = await self.call(
+                    "kill_command",
+                    {
+                        "command_id": command_id,
+                        "signal": "TERM",
+                        "wait_ms": 1000,
+                        "kill_wait_ms": 1000,
+                    },
+                )
+                if result.isError:
+                    failures.append(command_id)
+                else:
+                    self.running_commands.discard(command_id)
+            except Exception:
+                failures.append(command_id)
+        return failures
 
     async def close(self):
         await self.stack.aclose()

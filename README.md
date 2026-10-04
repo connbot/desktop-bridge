@@ -39,11 +39,12 @@ integration has not yet been verified, even when protocol tests pass.
 - Take control: immediately revoke new AI actions; human writes wait for an
   in-flight action to finish. The screen reconnects with input enabled.
 - Private takeover: additionally block model screenshots, browser snapshots and
-  tool calls. Existing shell processes are not forcibly killed: inspect and stop
-  them before entering sensitive data.
+  tool calls. Managed shell processes are stopped on takeover. Detached/unmanaged processes
+  cannot be guaranteed stopped: inspect the desktop before entering secrets.
 - Hand back: revoke the human WebSocket and require a fresh model observation.
 - Pause/Stop: block new AI actions. Stop is logical session control, not a Docker
-  shutdown or a promise to undo already launched external work.
+  shutdown or a promise to undo already launched external work. Managed shell
+  processes receive TERM/KILL when paused, stopped or taken over.
 
 All GUI/browser writes carry fresh observation IDs and durable action receipts.
 A lost-response action is never automatically replayed. A restart preserves

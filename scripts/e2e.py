@@ -393,9 +393,9 @@ async def run(restart):
                         await page.locator("#copy-feedback").filter(has_text="Endpoint copied").wait_for()
                         assert await page.evaluate("navigator.clipboard.readText()") == URL + "/mcp"
                         await page.get_by_role("button", name="Full screen", exact=True).click()
-                        await page.wait_for_function("!!document.fullscreenElement")
+                        await page.wait_for_function("() => !!document.fullscreenElement")
                         await page.evaluate("document.exitFullscreen()")
-                        await page.wait_for_function("!document.fullscreenElement")
+                        await page.wait_for_function("() => !document.fullscreenElement")
                         await page.get_by_role("button", name="Private takeover").click()
                         await page.locator("#status").filter(has_text="PRIVATE").wait_for()
                         await page.get_by_role("button", name="Hand back to AI").click()
@@ -421,6 +421,15 @@ async def run(restart):
                             await page.locator("#status").filter(has_text="PAUSED").wait_for()
                             await page.get_by_role("button", name="Hand back to AI").click()
                             await page.locator("#status").filter(has_text="AGENT").wait_for()
+                            await page.wait_for_function(
+                                """() => {
+                                const c=document.querySelector('#screen canvas');
+                                if(!c || c.width!==1280 || c.height!==800)return false;
+                                const d=c.getContext('2d').getImageData(0,0,1280,800).data;
+                                const colors=new Set();
+                                for(let i=0;i<d.length;i+=400)colors.add(`${d[i]},${d[i+1]},${d[i+2]}`);
+                                return colors.size>30;
+                            }""", timeout=20000)
                             await page.screenshot(
                                 path=str(OUT / f"viewer-{width}.png"), full_page=True
                             )

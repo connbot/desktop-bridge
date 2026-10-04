@@ -3,9 +3,13 @@
 A self-hosted external computer for your AI client. One MCP endpoint, one headed
 Chromium desktop, a persistent workspace, and server-enforced human takeover.
 
-**Status: under active validation. Do not treat the initial implementation as a
-production security boundary.** Single trusted owner only. The model loop lives
-in your MCP client; this is not a standalone autonomous agent.
+**Status: runnable self-hosted Hackathon preview.** The same implementation passed
+33 unit/security tests and three clean Docker end-to-end runs, including real
+browser OAuth approval, desktop input, view-only enforcement, and restart
+persistence. [Evidence and limits](docs/validation.md).
+
+Single trusted owner only; this is not a production multi-tenant security boundary.
+The model loop lives in your MCP client, not in this server.
 
 ## Run
 

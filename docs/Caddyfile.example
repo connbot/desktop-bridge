@@ -1,0 +1,5 @@
+# Replace this hostname with a domain you own that points to your host.
+# Set BRIDGE_PUBLIC_URL=https://computer.example.com in .env, then restart.
+computer.example.com {
+    reverse_proxy 127.0.0.1:8080
+}

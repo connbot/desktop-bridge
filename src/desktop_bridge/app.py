@@ -8,7 +8,7 @@ import os
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -394,7 +394,7 @@ def create_app(
             sid,
             httponly=True,
             secure=base_url.startswith("https:"),
-            samesite="strict",
+            samesite="lax",
             max_age=8 * 3600,
             path="/",
         )
@@ -481,10 +481,7 @@ def create_app(
         params = dict(request.query_params)
         client = auth.validate_request(params)
         if not auth.session(request.cookies.get("bridge_session")):
-            return RedirectResponse(
-                "/?authorize="
-                + __import__("urllib.parse", fromlist=["quote"]).quote(str(request.url), safe="")
-            )
+            return RedirectResponse("/?authorize=" + quote(str(request.url), safe=""))
         fields = "".join(
             f'<input type="hidden" name="{html.escape(k, quote=True)}" value="{html.escape(v, quote=True)}">'
             for k, v in params.items()

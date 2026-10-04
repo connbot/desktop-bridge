@@ -189,6 +189,16 @@ async def run(restart):
                     results.append(
                         "Coding Tools writes, reads, executes and exports real workspace file"
                     )
+                    for i in range(4):
+                        missing = await call(
+                            "coding_read_file",
+                            {"path": "does-not-exist", "bridge_action_id": f"missing-{i}"},
+                            True,
+                        )
+                        assert missing.isError
+                        assert "TOOL_RATE_LIMITED" not in str(missing)
+                    results.append("Repeated legitimate attempts are not blocked by failure count")
+
                     running = await call(
                         "coding_exec_command",
                         {
@@ -256,6 +266,52 @@ async def run(restart):
                           return colors.size > 30;
                         }""",
                             timeout=20000,
+                        )
+                        # Deliberately remove the CLIENT viewOnly flag: the server
+                        # must still reject input on the read-only VNC listener.
+                        await browser(
+                            {
+                                "kind": "fill",
+                                "role": "textbox",
+                                "name": "Project note",
+                                "text": "VIEW_ONLY",
+                            }
+                        )
+                        await browser({"kind": "click", "role": "textbox", "name": "Project note"})
+
+                        async def inject(channel):
+                            await page.evaluate(
+                                """async (channel) => {
+                              const {default:RFB}=await import('/novnc/core/rfb.js');
+                              const node=document.createElement('div');document.body.append(node);
+                              await new Promise((resolve,reject)=>{
+                                const r=new RFB(node,`ws://${location.host}/desktop/${channel}`);
+                                r.viewOnly=false;
+                                const timer=setTimeout(()=>{r.disconnect();reject(new Error('VNC handshake timeout'));},5000);
+                                r.addEventListener('connect',()=>{
+                                  r.sendKey(0x7a,'KeyZ');
+                                  setTimeout(()=>{clearTimeout(timer);r.disconnect();node.remove();resolve();},300);
+                                });
+                              });
+                            }""",
+                                channel,
+                            )
+
+                        await inject("view")
+                        snap = unpack(await call("browser_snapshot"))
+                        assert "VIEW_ONLYz" not in snap["snapshot"], snap
+                        await page.get_by_role("button", name="Take control", exact=True).click()
+                        await page.locator("#status").filter(has_text="HUMAN").wait_for()
+                        await inject("control")
+                        snap = unpack(await call("browser_snapshot"))
+                        assert "VIEW_ONLYz" in snap["snapshot"], snap
+                        await page.get_by_role("button", name="Hand back to AI").click()
+                        await page.locator("#status").filter(has_text="AGENT").wait_for()
+                        await page.wait_for_function(
+                            "document.querySelector('#screen').dataset.connected === 'true'"
+                        )
+                        results.append(
+                            "Server-enforced view-only rejects injected input; human channel accepts it"
                         )
                         await page.screenshot(path=str(OUT / "viewer.png"), full_page=True)
                         assert not errors, errors

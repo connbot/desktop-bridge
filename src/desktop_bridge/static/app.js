@@ -35,6 +35,8 @@ async function refresh() {
   clearTimeout(statusTimer);
   try {
     const s=await api('/api/status'); csrf=s.csrf;
+    const pending = new URLSearchParams(location.search).get('authorize');
+    if (pending) { const u = new URL(pending,location.origin); if(u.origin===location.origin && u.pathname==='/authorize'){location.replace(u);return;} }
     $('login').hidden=true; $('workspace').hidden=false;
     $('status').textContent=s.state; $('mcp-url').value=s.mcp_url; showEvents(s.events);
     $('control-note').textContent=s.in_flight ? 'Waiting for an in-flight action. New AI actions are blocked after takeover. Managed shell processes are being stopped. Detached external effects cannot be undone.' : s.state==='PRIVATE' ? 'Private takeover: AI observations and actions are blocked. You control the desktop.' : s.state==='HUMAN' ? 'You have control. AI writes are blocked until you hand back.' : s.state==='AGENT' ? 'AI has control. You are watching a server-enforced read-only stream.' : 'AI actions are paused. Hand back to AI to resume.';

@@ -9,9 +9,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && mkdir -p /data/workspace /data/state /data/profile /home/bridge/.config/openbox \
     && chown -R bridge:bridge /data /home/bridge
 WORKDIR /app
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README.md constraints.txt ./
 COPY src ./src
-RUN pip install --no-cache-dir '.[desktop]'
+RUN pip install --no-cache-dir -c constraints.txt '.[desktop]'
 COPY docker/supervisord.conf /etc/supervisor/supervisord.conf
 COPY docker/start-browser.sh /usr/local/bin/start-browser
 RUN chmod +x /usr/local/bin/start-browser

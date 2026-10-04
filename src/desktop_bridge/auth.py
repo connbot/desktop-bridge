@@ -70,6 +70,8 @@ class Auth:
         self.sessions.clear()
 
     def register(self, data):
+        if not isinstance(data, dict):
+            raise BridgeError("INVALID_CLIENT", "Client metadata must be an object")
         redirects = data.get("redirect_uris")
         if not isinstance(redirects, list) or not 1 <= len(redirects) <= 10:
             raise BridgeError("INVALID_CLIENT", "Supply 1–10 redirect_uris")

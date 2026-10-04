@@ -80,3 +80,16 @@ least-privilege accounts are required.
 GitHub Actions are used only to build and test repository code, never as a
 long-running hosted desktop. No external model credentials are needed for the
 deterministic end-to-end test suite.
+
+## Reproducibility
+
+Python package versions are constrained in constraints.txt; GitHub Actions are
+pinned to the resolved commit SHAs. Coding Tools is pinned to reviewed commit
+[a2b8021](https://github.com/connbot/coding-tools-mcp/commit/a2b802171bee1f990effa55f955efa2eddde4c59),
+including its non-blocking repeated-failure behavior and encoding fixes, rather
+than a mutable branch. This is a reviewed pre-release commit, not a new published
+package version. Debian system packages and the Python base tag still receive
+upstream updates; a rebuild is not claimed to be byte-for-byte identical.
+
+[中文上手与演示](docs/quickstart.zh-CN.md) · [Architecture](docs/architecture.md) ·
+[Third-party credit](THIRD_PARTY_NOTICES.md)

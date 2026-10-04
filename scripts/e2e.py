@@ -280,6 +280,7 @@ async def run(restart):
                             "code_challenge": ui_challenge,
                         }
                         await page.goto(URL + "/authorize?" + urlencode(ui_params))
+                        await page.screenshot(path=str(OUT / "login.png"), full_page=True)
                         await page.get_by_label("Owner access token").fill(OWNER)
                         await page.get_by_role("button", name="Open workspace").click()
                         await page.get_by_role("button", name="Approve for one hour").click()
@@ -378,7 +379,37 @@ async def run(restart):
                         }""",
                             timeout=20000,
                         )
+                        await page.get_by_role("button", name="Copy endpoint").click()
+                        await page.locator("#copy-feedback").filter(has_text="Endpoint copied").wait_for()
+                        await page.get_by_role("button", name="Private takeover").click()
+                        await page.locator("#status").filter(has_text="PRIVATE").wait_for()
+                        await page.get_by_role("button", name="Hand back to AI").click()
+                        await page.locator("#status").filter(has_text="AGENT").wait_for()
+                        await page.get_by_role("button", name="Reconnect screen").click()
+                        await page.locator('#screen[data-connected="true"]').wait_for()
+                        await page.wait_for_function(
+                            """() => {
+                            const c=document.querySelector('#screen canvas');
+                            if(!c || c.width!==1280 || c.height!==800)return false;
+                            const d=c.getContext('2d').getImageData(0,0,1280,800).data;
+                            const colors=new Set();
+                            for(let i=0;i<d.length;i+=400)colors.add(`${d[i]},${d[i+1]},${d[i+2]}`);
+                            return colors.size>30;
+                        }""", timeout=20000)
                         await page.screenshot(path=str(OUT / "viewer.png"), full_page=True)
+                        for width in [390, 768]:
+                            await page.set_viewport_size({"width": width, "height": 844})
+                            assert await page.evaluate(
+                                "document.documentElement.scrollWidth <= window.innerWidth"
+                            ), f"Horizontal overflow at {width}px"
+                            await page.get_by_role("button", name="Pause AI").click()
+                            await page.locator("#status").filter(has_text="PAUSED").wait_for()
+                            await page.get_by_role("button", name="Hand back to AI").click()
+                            await page.locator("#status").filter(has_text="AGENT").wait_for()
+                            await page.screenshot(
+                                path=str(OUT / f"viewer-{width}.png"), full_page=True
+                            )
+                        results.append("Responsive UI: copy, private mode, reconnect, 390px and 768px controls")
                         assert not errors, errors
                         await browser_ui.close()
                     results.append(

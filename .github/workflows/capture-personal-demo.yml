@@ -1,6 +1,9 @@
 name: Record personal capability demo
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['scripts/capture_personal_demo.py', 'demo/personal-workspace/**', '.github/workflows/capture-personal-demo.yml']
 permissions:
   contents: read
 concurrency:

@@ -73,6 +73,7 @@ def initial_files():
     targets = {
         'index.html': 'tools/index.html', 'style.css': 'tools/style.css', 'app.js': 'tools/app.js',
         'sample-spending.csv': 'data/sample-spending.csv', 'analyze.py': 'scripts/analyze.py',
+        'serve.py': 'scripts/serve.py',
         'weekend-plan.md': 'plans/weekend-plan.md',
         'packing-checklist.md': 'plans/packing-checklist.md',
     }
@@ -127,16 +128,16 @@ async def run(url, out):
             async with ClientSession(streams[0], streams[1]) as client:
                 await client.initialize()
 
-                async def call(name, args=None):
+                async def call(name, args=None, allow_error=False):
                     result = await client.call_tool(name, args or {})
-                    assert not result.isError, (name, str(result)[:2000])
+                    assert allow_error or not result.isError, (name, str(result)[:2000])
                     evidence['tools'].append({'name':name,'time':round(time.monotonic()-origin,3),
-                                              'success':True})
+                                              'success':not bool(result.isError)})
                     (out / 'evidence.json').write_text(json.dumps(evidence, indent=2))
                     return result
 
-                async def coding(name, args):
-                    return await call(name, {**args, 'bridge_action_id':'demo-' + str(uuid.uuid4())})
+                async def coding(name, args, allow_error=False):
+                    return await call(name, {**args, 'bridge_action_id':'demo-' + str(uuid.uuid4())}, allow_error=allow_error)
 
                 async def browser(action):
                     observation = unpack(await call('browser_snapshot'))['observation_id']
@@ -177,18 +178,60 @@ async def run(url, out):
                 await coding('coding_apply_patch', {'patch':add_files_patch(files)})
                 read = await coding('coding_read_file', {'path':'everyday/tools/index.html'})
                 assert 'Everyday Studio' in str(read)
-                evidence['verified'].append('Coding Tools MCP created and read seven real workspace files')
+                evidence['verified'].append('Coding Tools MCP created eight real workspace files and verified the app source')
                 result = await coding('coding_exec_command', {
                     'cmd':'python everyday/scripts/analyze.py', 'yield_time_ms':1000})
                 assert '126.40' in str(result), result
                 summary = await coding('coding_read_file', {'path':'everyday/outputs/spending-summary.json'})
                 assert '126.4' in str(summary), summary
                 evidence['verified'].append('Coding Tools MCP executed Python over the sample CSV; five transactions total $126.40')
+                async def server_status(server, label):
+                    status = await coding('coding_write_stdin', {
+                        'command_id':server.structuredContent['command_id'],
+                        'chars':'', 'yield_time_ms':0})
+                    (out / f'{label}-process.json').write_text(
+                        json.dumps(status.model_dump(mode='json'), indent=2))
+                    return status
+
+                async def probe_server(label):
+                    result = await coding('coding_exec_command', {
+                        'cmd': "python -c 'import urllib.request; "
+                               "body=urllib.request.urlopen("
+                               "\"http://127.0.0.1:8765/tools/index.html\",timeout=3).read(); "
+                               "assert b\"Everyday Studio\" in body; print(\"DEMO_HTTP_READY\")'",
+                        'yield_time_ms':5000, 'timeout_ms':6000, 'max_output_bytes':5000}, allow_error=True)
+                    (out / f'{label}-probe.json').write_text(
+                        json.dumps(result.model_dump(mode='json'), indent=2))
+                    info = result.structuredContent or {}
+                    return info.get('exit_code') == 0 and 'DEMO_HTTP_READY' in str(result)
+
+                # Preserve diagnostic evidence from the standard server first. If its
+                # request handling fails, retry with the constrained demo-only server;
+                # do not change filesystem permissions or bypass tool-policy denials.
                 server = await coding('coding_exec_command', {
-                    'cmd':'python -m http.server 8765 --bind 127.0.0.1 --directory everyday',
-                    'yield_time_ms':0})
+                    'cmd':'python -u -m http.server 8765 --bind 127.0.0.1 --directory everyday',
+                    'yield_time_ms':500, 'timeout_ms':300000})
                 assert server.structuredContent and server.structuredContent['status'] == 'running', server
-                await asyncio.sleep(1)
+                ready = await probe_server('standard-server')
+                await server_status(server, 'standard-server')
+                if not ready:
+                    killed = await coding('coding_kill_command', {
+                        'command_id':server.structuredContent['command_id'],
+                        'signal':'TERM', 'wait_ms':1000, 'kill_wait_ms':1000})
+                    assert (killed.structuredContent or {}).get('status') in {'killed','terminated','exited'}, killed
+                    server = await coding('coding_exec_command', {
+                        'cmd':'python -u everyday/scripts/serve.py',
+                        'yield_time_ms':500, 'timeout_ms':300000})
+                    assert server.structuredContent and server.structuredContent['status'] == 'running', server
+                    for attempt in range(12):
+                        ready = await probe_server(f'demo-server-{attempt}')
+                        status = await server_status(server, f'demo-server-{attempt}')
+                        if ready:
+                            break
+                        assert (status.structuredContent or {}).get('status') == 'running', status
+                        await asyncio.sleep(.5)
+                assert ready, 'Sample HTTP server did not become ready; see server process/probe artifacts'
+                evidence['verified'].append('An actual Coding Tools HTTP probe verified the generated page before browser navigation')
                 await browser({'kind':'navigate','url':'http://127.0.0.1:8765/tools/index.html'})
                 await snapshot_contains('Make room for','Coding Tools MCP','$50')
                 # F11 makes the existing headed Chromium fill the real 1280x800 desktop.
@@ -292,7 +335,7 @@ async def run(url, out):
                     await observer.close()
                 exports = out / 'exports'
                 for path in ['everyday/tools/index.html','everyday/tools/style.css','everyday/tools/app.js',
-                             'everyday/data/sample-spending.csv','everyday/scripts/analyze.py',
+                             'everyday/data/sample-spending.csv','everyday/scripts/analyze.py','everyday/scripts/serve.py',
                              'everyday/outputs/spending-summary.json','everyday/outputs/spending-summary.md',
                              'everyday/plans/weekend-plan.md','everyday/plans/packing-checklist.md']:
                     response = await http.get('/api/artifacts/' + path)
@@ -301,7 +344,7 @@ async def run(url, out):
                     target.parent.mkdir(parents=True,exist_ok=True)
                     target.write_bytes(response.content)
                 await http.post('/api/control/paused',headers={'X-CSRF-Token':csrf,'Origin':url})
-                evidence['verified'].append('All nine generated files were exported; managed sample web server stopped after capture')
+                evidence['verified'].append('All ten generated files were exported; managed sample web server stopped after capture')
     evidence['complete'] = True
     (out / 'evidence.json').write_text(json.dumps(evidence,indent=2)+'\n')
     print(json.dumps({'complete':True,'output':str(out),'verified':evidence['verified']},indent=2))

@@ -1,9 +1,12 @@
 name: Record personal capability demo
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ['scripts/capture_personal_demo.py', 'demo/personal-workspace/**', '.github/workflows/capture-personal-demo.yml']
+    inputs:
+      coding_permission_mode:
+        description: 'Permission mode for this disposable sample-data container; dangerous also disables filesystem confinement'
+        type: choice
+        options: [safe, trusted, dangerous]
+        default: safe
 permissions:
   contents: read
 concurrency:
@@ -13,6 +16,8 @@ jobs:
   capture:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      BRIDGE_CODING_PERMISSION_MODE: ${{ inputs.coding_permission_mode || 'safe' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -26,7 +31,8 @@ jobs:
         run: |
           docker run -d --name bridge --shm-size=1g -p 127.0.0.1:8080:8080 \
             -e BRIDGE_OWNER_TOKEN=test-only-owner-token-not-for-deployment-123 \
-            -e BRIDGE_PUBLIC_URL=http://127.0.0.1:8080 desktop-bridge:demo
+            -e BRIDGE_PUBLIC_URL=http://127.0.0.1:8080 \
+            -e BRIDGE_CODING_PERMISSION_MODE desktop-bridge:demo
           for i in $(seq 1 90); do
             if curl -fsS http://127.0.0.1:8080/healthz; then exit 0; fi
             sleep 2

@@ -143,6 +143,9 @@ class Browser:
 class Coding:
     def __init__(self, workspace: Path):
         self.workspace = workspace
+        self.permission_mode = os.environ.get("BRIDGE_CODING_PERMISSION_MODE", "safe")
+        if self.permission_mode not in {"safe", "trusted", "dangerous"}:
+            raise ValueError("BRIDGE_CODING_PERMISSION_MODE must be safe, trusted, or dangerous")
         self.stack = AsyncExitStack()
         self.client = None
         self.tools = []
@@ -161,7 +164,8 @@ class Coding:
             stdio_client(
                 StdioServerParameters(
                     command=sys.executable,
-                    args=["-m", "coding_tools_mcp", "--stdio", "--workspace", str(self.workspace)],
+                    args=["-m", "coding_tools_mcp", "--stdio", "--workspace", str(self.workspace),
+                          "--permission-mode", self.permission_mode],
                     env=env,
                 )
             )

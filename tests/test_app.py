@@ -277,3 +277,17 @@ def test_oauth_login_redirect_uses_public_https_origin_behind_proxy(tmp_path):
         }, headers={"X-Forwarded-Proto": "http"}, follow_redirects=False)
         target = parse_qs(urlsplit(response.headers["location"]).query)["authorize"][0]
         assert target.startswith("https://bridge.example/authorize?")
+
+
+def test_coding_permission_defaults_safe_and_rejects_unknown(monkeypatch, tmp_path):
+    from desktop_bridge.backends import Coding
+
+    monkeypatch.delenv("BRIDGE_CODING_PERMISSION_MODE", raising=False)
+    assert Coding(tmp_path).permission_mode == "safe"
+    monkeypatch.setenv("BRIDGE_CODING_PERMISSION_MODE", "trusted")
+    assert Coding(tmp_path).permission_mode == "trusted"
+    monkeypatch.setenv("BRIDGE_CODING_PERMISSION_MODE", "dangerous")
+    assert Coding(tmp_path).permission_mode == "dangerous"
+    monkeypatch.setenv("BRIDGE_CODING_PERMISSION_MODE", "unknown")
+    with pytest.raises(ValueError):
+        Coding(tmp_path)

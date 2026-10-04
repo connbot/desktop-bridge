@@ -1,5 +1,57 @@
 # Agent Workspace
 
+Give your existing AI a visible browser, controllable desktop, and files it can
+create and edit, with one MCP connection powered by
+[xyTom's Coding Tools MCP](https://github.com/xyTom/coding-tools-mcp).
+
+## Quickstart
+
+1. **Start your workspace:** follow [Run](#run) below to configure and launch it
+   with Docker Compose, then open the desktop viewer.
+2. **Connect your AI client:** use the workspace's `/mcp` endpoint with OAuth.
+   A remote client such as ChatGPT needs a reachable HTTPS deployment; see
+   [Run](#run) for the public origin and proxy requirements.
+3. **Give it a task:** let the client use the browser and file tools, watch the
+   desktop, and inspect the saved result. **Take control** lets you take over.
+
+### Connect from ChatGPT on the web
+
+1. Open **Settings → Apps → Advanced settings → Developer mode**. Availability
+   and write-tool access depend on your plan and workspace permissions; an admin
+   may need to enable access.
+2. Go to **Apps → Create**, name the app **Agent Workspace**, enter
+   `https://YOUR_HOST/mcp` (replace `YOUR_HOST` with your deployed workspace's
+   hostname), and choose **OAuth** authentication.
+3. Click **Scan Tools**, complete the workspace login and OAuth approval in
+   your browser, wait for the scan, then click **Create**. Never paste the
+   workspace's owner token into an AI chat.
+4. Open a chat and select **Agent Workspace** from the tools/apps menu. Confirm
+   any requested actions, and keep the desktop viewer open to watch the work.
+
+See OpenAI's current [developer mode and MCP app instructions](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt)
+for plan-specific setup. Reauthenticate when the workspace's one-hour access
+grant expires.
+
+### A concrete task to try
+
+> Use Agent Workspace's browser to find three free things to do in San Francisco
+> this weekend. Check the official sources for dates and opening hours, then save
+> a short plan with source links as `weekend-options.md` in the workspace.
+> Read the saved file back to verify it, then show me where to find it.
+
+This task uses the running workspace's browser and file tools; it does not
+require starting an additional shell server. Use fictional data while testing,
+and avoid personal high-value accounts. The workspace is for one trusted owner,
+not independent users sharing a secure multi-tenant service.
+
+**Optional capabilities:** [Personal memory](#optional-personal-context-and-task-continuity)
+and [external MCP plugins](docs/optional-mcp.md) are configurable and disabled
+by default. Neon and Vapi require separate accounts, credentials, and setup;
+including an adapter does not establish a live service connection. Your existing
+AI client runs the model loop; the server has no autonomous background model loop.
+
+## Project overview
+
 A self-hosted workspace for a general personal AI. Work on everyday tasks and
 keep the files your AI makes. Optional memory adds reusable preferences, goals,
 and task continuity when you configure a provider. One MCP endpoint

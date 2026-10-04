@@ -1,10 +1,11 @@
-# Desktop Bridge
+# Agent Workspace
 
 A self-hosted workspace for a general personal AI. Work on everyday tasks and
 keep the files your AI makes. Optional memory adds reusable preferences, goals,
 and task continuity when you configure a provider. One MCP endpoint
 connects your existing AI client to a headed Chromium desktop and your own
-Coding Tools MCP file, editing, shell, and execution tools.
+[Coding Tools MCP](https://github.com/xyTom/coding-tools-mcp) by xyTom for file,
+editing, shell, and execution tools.
 
 **Status: runnable self-hosted Hackathon preview.** The same implementation passed
 53 unit/security tests and three clean Docker end-to-end runs, including real

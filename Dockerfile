@@ -28,6 +28,14 @@ CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
 # The launcher drops to bridge before supervisor or any application is executed.
 FROM desktop AS fly
 USER root
+# Reopening Docker's root-owned stdout/stderr pipes fails after the UID drop.
+# Keep child logs bounded and private; supervisor's inherited output still works.
+RUN sed -i \
+    -e 's|^stdout_logfile=/dev/stdout$|stdout_logfile=/tmp/%(program_name)s.stdout.log|' \
+    -e 's|^stderr_logfile=/dev/stderr$|stderr_logfile=/tmp/%(program_name)s.stderr.log|' \
+    -e 's|^stdout_logfile_maxbytes=0$|stdout_logfile_maxbytes=1MB\nstdout_logfile_backups=2|' \
+    -e 's|^stderr_logfile_maxbytes=0$|stderr_logfile_maxbytes=1MB\nstderr_logfile_backups=2|' \
+    /etc/supervisor/supervisord.conf
 COPY docker/fly-entrypoint.py /usr/local/bin/fly-entrypoint.py
 ENTRYPOINT ["/usr/bin/tini", "--", "python3", "/usr/local/bin/fly-entrypoint.py"]
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]

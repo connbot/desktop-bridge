@@ -538,3 +538,129 @@ async def test_in_flight_result_is_hidden_if_private_takeover_occurs(tmp_path):
             assert receipt == ("unknown", None)
         finally:
             await runtime.close()
+
+
+
+def test_server_id_cannot_embed_namespace_delimiter():
+    # Without this restriction, (a, b__echo) and (a__b, echo) route identically.
+    assert namespaced("a", "b__echo") == namespaced("a__b", "echo")
+    with pytest.raises(ValidationError):
+        config("a__b", url="https://second.example/mcp", allowed_tools=["echo"])
+    assert config("a_b", url="https://valid.example/mcp").id == "a_b"
+
+
+async def test_crafted_short_name_cannot_alias_hashed_long_name():
+    long = "a" * 90
+    short = namespaced("demo", long).removeprefix("mcp_demo__")
+    assert long != short and namespaced("demo", short) == namespaced("demo", long)
+    tools = [{"name": name, "inputSchema": {"type": "object"}} for name in [long, short]]
+    transport, calls, _ = rpc_transport(tools=tools)
+    registry = MCPPlugins(PluginConfig(servers=[config(allowed_tools=[long, short])]),
+                          transport_factory=lambda cfg: transport)
+    try:
+        await registry.start()
+        assert registry.tools() == []
+        assert registry.status()["servers"][0]["state"] == "unavailable"
+        assert not registry.owns(namespaced("demo", long))
+        with pytest.raises(BridgeError) as error:
+            await registry.call(namespaced("demo", short), {})
+        assert error.value.code == "UNKNOWN_TOOL"
+        assert calls == []
+    finally:
+        await registry.close()
+
+
+async def test_public_name_collision_disables_all_affected_services(monkeypatch):
+    from desktop_bridge import plugins
+    first_transport, first_calls, _ = rpc_transport()
+    second_transport, second_calls, _ = rpc_transport()
+    transports = {"first": first_transport, "second": second_transport}
+    monkeypatch.setattr(plugins, "namespaced", lambda server_id, name: "forced_public_collision")
+    registry = MCPPlugins(PluginConfig(servers=[config("first"), config("second")]),
+                          transport_factory=lambda cfg: transports[cfg.id])
+    try:
+        await registry.start()
+        assert [slot["state"] for slot in registry.status()["servers"]] == ["unavailable", "unavailable"]
+        assert registry.tools() == []
+        assert not registry.owns("forced_public_collision")
+        with pytest.raises(BridgeError):
+            await registry.call("forced_public_collision", {})
+        assert first_calls == second_calls == []
+    finally:
+        await registry.close()
+
+
+
+@pytest.mark.parametrize("later_mode", ["human", "agent"])
+async def test_result_cannot_escape_private_after_another_control_transition(tmp_path, later_mode):
+    server = FastMCP("privacy", stateless_http=True, json_response=True,
+                     transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False))
+    started, finish = asyncio.Event(), asyncio.Event()
+    calls = []
+    @server.tool()
+    async def delayed() -> str:
+        calls.append("accepted")
+        started.set()
+        await finish.wait()
+        return "must remain private"
+    app = server.streamable_http_app()
+    registry = MCPPlugins(PluginConfig(servers=[config(allowed_tools=["delayed"])]),
+                          transport_factory=lambda cfg: httpx.ASGITransport(app=app))
+    runtime = runtime_with_plugins(tmp_path, registry)
+    async with server.session_manager.run():
+        try:
+            await runtime.start()
+            await runtime.call("session_start", {})
+            args = {"bridge_action_id": "private-epoch", "arguments": {}}
+            call = asyncio.create_task(runtime.call("mcp_demo__delayed", args))
+            await started.wait()
+            private = asyncio.create_task(runtime.control("private"))
+            await asyncio.sleep(0)
+            later = asyncio.create_task(runtime.control(later_mode))
+            await asyncio.sleep(0)
+            assert runtime.session.mode == later_mode
+            finish.set()
+            with pytest.raises(BridgeError) as error:
+                await call
+            assert error.value.code == "CONTROL_CHANGED"
+            await asyncio.gather(private, later)
+            row = runtime.session.db.execute(
+                "SELECT state,result FROM receipts WHERE id='private-epoch'"
+            ).fetchone()
+            assert row == ("unknown", None)
+            await runtime.control("agent")
+            with pytest.raises(BridgeError) as error:
+                await runtime.call("mcp_demo__delayed", args)
+            assert error.value.code == "OUTCOME_UNKNOWN"
+            assert calls == ["accepted"]
+        finally:
+            await runtime.close()
+
+
+async def test_root_and_content_metadata_survive_forwarding_and_receipt_replay(tmp_path):
+    transport, calls, _ = rpc_transport(result={
+        "_meta": {"custom": "important"},
+        "content": [{"type": "text", "text": "ok", "_meta": {"x": 1}}],
+        "structuredContent": {"answer": 42}, "isError": False,
+    })
+    registry = MCPPlugins(PluginConfig(servers=[config()]), transport_factory=lambda cfg: transport)
+    runtime = runtime_with_plugins(tmp_path, registry)
+    try:
+        await runtime.start()
+        await runtime.call("session_start", {})
+        args = {"bridge_action_id": "metadata", "arguments": {}}
+        first = await runtime.call("mcp_demo__echo", args)
+        replay = await runtime.call("mcp_demo__echo", args)
+        for result in (first, replay):
+            assert result.meta == {"custom": "important"}
+            assert result.content[0].meta == {"x": 1}
+            assert result.structuredContent == {"answer": 42}
+            assert result.isError is False
+        row = runtime.session.db.execute("SELECT result FROM receipts WHERE id='metadata'").fetchone()
+        stored = json.loads(row[0])
+        assert stored["_meta"] == {"custom": "important"}
+        assert stored["content"][0]["_meta"] == {"x": 1}
+        assert "meta" not in stored and "meta" not in stored["content"][0]
+        assert len(calls) == 1
+    finally:
+        await runtime.close()

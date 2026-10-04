@@ -98,6 +98,13 @@ class ServerConfig(BaseModel):
     connect_timeout_seconds: float = Field(default=8, ge=1, le=15)
     call_timeout_seconds: float = Field(default=30, ge=1, le=60)
 
+    @field_validator("id")
+    @classmethod
+    def unambiguous_id(cls, value):
+        if "__" in value:
+            raise ValueError("Server IDs cannot contain the tool namespace delimiter")
+        return value
+
     @field_validator("url")
     @classmethod
     def endpoint(cls, value):
@@ -390,6 +397,26 @@ class MCPPlugins:
             slot.task = asyncio.create_task(self._serve(slot, headers))
         if prepared:
             await asyncio.gather(*(slot.ready.wait() for slot, _ in prepared))
+            # Long-name hashing can collide with an intentionally crafted short
+            # upstream name. Never expose or route an ambiguous public name.
+            owners = {}
+            collisions = set()
+            for slot in self.slots:
+                for remote in slot.tools:
+                    public = namespaced(slot.config.id, remote)
+                    if public in owners:
+                        collisions.update((owners[public], slot.config.id))
+                    else:
+                        owners[public] = slot.config.id
+            affected = [slot for slot in self.slots if slot.config.id in collisions]
+            for slot in affected:
+                if slot.task:
+                    slot.task.cancel()
+            await asyncio.gather(*(slot.task for slot in affected if slot.task),
+                                 return_exceptions=True)
+            for slot in affected:
+                slot.tools.clear()
+                slot.state = "unavailable"
 
     async def close(self):
         for slot in self.slots:
@@ -442,7 +469,7 @@ class MCPPlugins:
                                     remote, args,
                                     read_timeout_seconds=timedelta(seconds=slot.config.call_timeout_seconds),
                                 )
-                            cleaned = redact(result.model_dump(mode="json"), self._secrets)
+                            cleaned = redact(result.model_dump(mode="json", by_alias=True), self._secrets)
                             if len(json.dumps(cleaned).encode()) > MAX_RESULT_BYTES:
                                 raise BridgeError("PLUGIN_RESULT_TOO_LARGE", "Upstream result exceeds 256 KiB")
                             if not slot.active.done():

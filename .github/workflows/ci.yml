@@ -1,4 +1,4 @@
-name: Validate desktop bridge
+name: Validate Agent Workspace
 on:
   push:
   pull_request:

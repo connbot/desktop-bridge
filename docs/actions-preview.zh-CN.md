@@ -1,6 +1,6 @@
 # GitHub Actions → Cloudflare Tunnel → ChatGPT
 
-这是 Desktop Bridge 的按需开发/测试入口：Actions 启动真实 Docker 桌面，
+这是 Agent Workspace 的按需开发/测试入口：Actions 启动真实 Docker 桌面，
 Cloudflare 提供 HTTPS 地址，ChatGPT 通过 OAuth + Streamable HTTP 调用桌面、
 浏览器、文件和终端工具。无需 OpenAI API key；模型由你的 ChatGPT 客户端提供。
 
@@ -49,7 +49,7 @@ ChatGPT 中是否显示创建连接入口取决于账户、工作区权限和当
 
 ## 生命周期和边界
 
-- 这套 workflow 用来开发、测试 Desktop Bridge 和 Hackathon 演示；不循环自启，
+- 这套 workflow 用来开发、测试 Agent Workspace 和 Hackathon 演示；不循环自启，
   不充当长期生产托管服务。遵守 [GitHub Actions 使用条款](https://docs.github.com/en/site-policy/github-terms/github-terms-for-additional-products-and-features#actions)。
 - GitHub-hosted job 最长 6 小时；本 workflow 最长 330 分钟，互动时长最多 300 分钟，
   为构建、验证和清理留出余量。取消 workflow 会关闭隧道和电脑。

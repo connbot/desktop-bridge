@@ -1,6 +1,6 @@
 # Architecture and scope
 
-Desktop Bridge implements **Mode A** of the OpenDots proposal: a computer that
+Agent Workspace implements **Mode A** of the OpenDots proposal: a computer that
 an existing MCP client can operate. The client owns model reasoning and approvals.
 No model keys, subscription credential forwarding, scheduler, or hosted agent
 loop are included. This avoids pretending an MCP server thinks autonomously.

@@ -83,6 +83,14 @@ A custom `BRIDGE_DATA` location is rejected by this bootstrap. Existing files wi
 wrong ownership are not silently repaired; review those separately. The normal
 `local` Docker target still starts as `bridge` without this root bootstrap.
 
+The Fly target routes display/gateway child logs to private per-program files
+(`/tmp/display.stdout.log`, `/tmp/display.stderr.log`, and matching `gateway`
+files), capped at 1 MiB with two backups per stream. After a root-to-bridge UID
+drop, reopening `/dev/stdout` can fail even though inherited descriptors remain
+writable. Supervisor status still reaches container output; inspect the child log
+files for application details. CI collects both kinds of logs. The local target's
+logging is unchanged, and no pipe or filesystem permissions are broadened.
+
 The browser already uses `--disable-dev-shm-usage`; Compose's `shm_size` is not
 assumed to transfer to Fly. Test actual Chromium behavior, memory pressure and
 filesystem capacity on the selected Machine before the live demo.

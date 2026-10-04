@@ -79,8 +79,10 @@ other services. No selected name matching the remote catalog reports
 headers, key values or raw upstream errors.
 
 Names are `mcp_<server-id>__<upstream-tool>`; unusually long names get a stable
-hash suffix to fit 64 characters. Separate services can safely use the same tool
-name. Arguments are wrapped, so an upstream's own `bridge_action_id` or
+hash suffix to fit 64 characters. Server IDs cannot contain the `__` namespace
+delimiter. Discovery also checks public names across the complete registry; any
+collision disables every affected service rather than routing ambiguously.
+Separate services can safely use the same ordinary upstream tool name. Arguments are wrapped, so an upstream's own `bridge_action_id` or
 `arguments` field cannot collide with the gateway's receipt identifier:
 
 ```json
@@ -101,8 +103,8 @@ Successful calls preserve MCP content, structured content, and `isError`, subjec
 to redaction and size limits. Duplicate completed action IDs return the previous
 receipt without calling again. A timeout, disconnection, oversized result or
 uncertain response becomes an unknown outcome; do not automatically replay the
-operation. Inspect the external state first. A private takeover hides an in-flight
-upstream result too. Stopping a request cannot undo an email/call/action already
+operation. Inspect the external state first. Any control-generation change hides an in-flight upstream result, even if private
+mode is entered and then left before the service replies. Stopping a request cannot undo an email/call/action already
 accepted by its provider.
 
 ## Supported boundary and limits

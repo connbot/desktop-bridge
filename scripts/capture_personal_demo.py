@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Record a genuine, deterministic Desktop Bridge capability demonstration.
+"""Record a genuine, deterministic Agent Workspace capability demonstration.
 
 This is a rehearsed MCP test driver, not an autonomous-model benchmark. Every
 workspace mutation goes through the real Coding Tools MCP integration; every
-app interaction goes through Desktop Bridge browser/desktop tools. Playwright
+app interaction goes through Agent Workspace browser/desktop tools. Playwright
 on the test runner only observes and records the existing public noVNC viewer.
 All inputs are fictional sample data. No third-party actions or live claims.
 """
@@ -162,6 +162,7 @@ async def run(url, out):
                     return await browser({'kind':'click','role':'button','name':name})
 
                 async def capture(page, name):
+                    await page.locator('#screen canvas').scroll_into_view_if_needed()
                     # Wait for VNC to catch up with a completed actual tool action.
                     await asyncio.sleep(.8)
                     shot = await call('desktop_screenshot')
@@ -271,16 +272,24 @@ async def run(url, out):
                     # Keep the observer in its ordinary viewport. Headless fullscreen
                     # can record only the backing window's 800x600 area, even while
                     # Playwright screenshots show a complete emulated viewport.
-                    bounds = await page.locator('#screen canvas').bounding_box()
-                    assert bounds and bounds['width'] > 800 and bounds['height'] > 500, bounds
-                    assert bounds['x'] >= 0 and bounds['y'] >= 0, bounds
-                    assert bounds['x'] + bounds['width'] <= WIDTH, bounds
-                    assert bounds['y'] + bounds['height'] <= HEIGHT, bounds
+                    async def desktop_bounds():
+                        # Optional context panels can place the desktop below the fold.
+                        # Move the real viewport; never hide or rearrange product UI.
+                        await page.locator('#screen canvas').scroll_into_view_if_needed()
+                        current = await page.locator('#screen canvas').bounding_box()
+                        assert current and current['width'] > 800 and current['height'] > 500, current
+                        assert current['x'] >= 0 and current['y'] >= 0, current
+                        assert current['x'] + current['width'] <= WIDTH, current
+                        assert current['y'] + current['height'] <= HEIGHT, current
+                        return current
+
+                    bounds = await desktop_bounds()
                     evidence['capture']['video_crop'] = bounds
                     evidence['capture']['outer_fullscreen'] = False
 
                     async def chapter(title):
-                        evidence['chapters'].append({'title':title,
+                        current = await desktop_bounds()
+                        evidence['chapters'].append({'title':title, 'video_crop':current,
                             'video_start_seconds':round(time.monotonic()-recording_start,2)})
 
                     await chapter('Interactive weekend planner')
@@ -359,7 +368,8 @@ async def run(url, out):
                         assert proc.returncode == 0, stderr.decode(errors='replace')
                         with Image.open(frame) as rendered:
                             assert rendered.size == (WIDTH, HEIGHT), rendered.size
-                            x, y, width, height = (bounds[key] for key in ('x','y','width','height'))
+                            crop = item.get('video_crop', bounds)
+                            x, y, width, height = (crop[key] for key in ('x','y','width','height'))
                             detail = rendered.convert('RGB').crop((
                                 int(x + width * .72), int(y + height * .72),
                                 int(x + width * .97), int(y + height * .97)))

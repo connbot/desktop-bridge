@@ -18,6 +18,24 @@ jobs:
         run: >-
           docker build --target fly --build-arg BRIDGE_PYTHON_EXTRAS=desktop,postgres
           -t desktop-bridge:fly .
+      - name: Verify inherited output works after dropping root but path reopen is denied
+        run: |
+          docker run --rm --user root --entrypoint python3 desktop-bridge:fly -c '
+          import os
+          import stat
+          assert os.geteuid() == 0
+          assert os.fstat(1).st_uid == 0 and stat.S_ISFIFO(os.fstat(1).st_mode)
+          os.setgroups([])
+          os.setgid(1000)
+          os.setuid(1000)
+          os.write(1, b"Inherited output still works after the UID drop\n")
+          try:
+              descriptor = os.open("/dev/stdout", os.O_WRONLY)
+          except PermissionError:
+              print("Confirmed: reopening the root-owned output pipe is denied")
+          else:
+              os.close(descriptor)
+              raise AssertionError("Expected the root-owned pipe reopen to be denied")'
       - name: Start with a fresh root-owned disposable volume
         run: |
           docker volume create bridge-fly-data
@@ -64,7 +82,11 @@ jobs:
                   pass
           assert len(seen) >= 2
           import psycopg
-          print("Non-root runtime, mounted state and prepared Postgres driver verified")'
+          for name in ("display", "gateway"):
+              for stream in ("stdout", "stderr"):
+                  log = Path("/tmp") / f"{name}.{stream}.log"
+                  assert log.is_file() and log.stat().st_uid == 1000
+          print("Non-root runtime, private child logs, mounted state and Postgres driver verified")'
       - name: Restart and verify volume persistence
         run: |
           docker restart bridge-fly
@@ -93,11 +115,17 @@ jobs:
         run: |
           mkdir -p artifacts
           docker logs bridge-fly > artifacts/fly-image.log 2>&1 || true
+          docker exec --user bridge bridge-fly sh -c '
+            for file in /tmp/supervisord.log /tmp/*.stdout.log /tmp/*.stderr.log; do
+              if test -f "$file"; then printf "\n=== %s ===\n" "$file"; cat "$file"; fi
+            done' > artifacts/fly-child-logs.log 2>&1 || true
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: fly-image-evidence
-          path: artifacts/fly-image.log
+          path: |
+            artifacts/fly-image.log
+            artifacts/fly-child-logs.log
           retention-days: 7
       - name: Remove only disposable test resources
         if: always()

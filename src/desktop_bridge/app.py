@@ -337,10 +337,12 @@ class Runtime:
             async with session.action(action_id, fingerprint) as ticket:
                 if "cached" in ticket:
                     return types.CallToolResult.model_validate(ticket["cached"])
+                epoch = session.epoch
                 result = await drain_on_cancel(self.plugins.call(name, payload))
-                if session.mode == "private":
-                    raise BridgeError("PRIVATE_TAKEOVER", "Upstream result hidden during private takeover")
-                ticket["result"] = result.model_dump(mode="json")
+                if session.epoch != epoch:
+                    code = "PRIVATE_TAKEOVER" if session.mode == "private" else "CONTROL_CHANGED"
+                    raise BridgeError(code, "Upstream result hidden because control changed during this call")
+                ticket["result"] = result.model_dump(mode="json", by_alias=True)
                 return result
         raise BridgeError("UNKNOWN_TOOL", name)
 

@@ -18,4 +18,4 @@ Fictional sample itinerary for two people. Illustrative estimates only; no resea
 - Budget: $420
 - Room to spare: $50
 
-Created as a useful local artifact through Coding Tools MCP in the Desktop Bridge rehearsed capability demonstration.
+Created as a useful local artifact through Coding Tools MCP in the Agent Workspace rehearsed capability demonstration.

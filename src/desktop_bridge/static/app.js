@@ -209,7 +209,7 @@ $('context-file').addEventListener('change', async event => {
   try {
     if (file.size > 128 * 1024) throw new Error('Choose a context export smaller than 128 KiB.');
     importedContext = JSON.parse(await file.text());
-    if (importedContext.schema_version !== 1 || !importedContext.profile || !Array.isArray(importedContext.tasks)) throw new Error('Choose a Desktop Bridge personal context export.');
+    if (importedContext.schema_version !== 1 || !importedContext.profile || !Array.isArray(importedContext.tasks)) throw new Error('Choose a Agent Workspace personal context export.');
     importRevision = personalData.revision; $('import-preview').textContent = `${file.name}: ${importedContext.tasks.length} task record(s).`;
     $('import-error').textContent = ''; $('import-dialog').showModal();
   } catch (e) { feedback(e.message); } finally { event.target.value = ''; }

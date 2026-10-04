@@ -142,7 +142,7 @@ async def run(restart):
                     )
                 else:
                     await browser({"kind": "navigate", "url": URL + "/static/demo.html"})
-                    assert "acceptance lab" in unpack(await call("browser_snapshot"))["title"]
+                    assert unpack(await call("browser_snapshot"))["title"] == "Agent Workspace · Acceptance lab"
                     results.append("Structured Playwright operates visible headed Chromium")
                     await browser({"kind": "click", "role": "textbox", "name": "Project note"})
                     await gui({"kind": "type", "text": "你好，Hackathon!\nUTF-8 ✓"})

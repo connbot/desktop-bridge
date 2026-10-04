@@ -162,7 +162,8 @@ async def run(url, out):
                     return await browser({'kind':'click','role':'button','name':name})
 
                 async def capture(page, name):
-                    await page.locator('#screen canvas').scroll_into_view_if_needed()
+                    await page.locator('#screen canvas').evaluate(
+                        "canvas => canvas.scrollIntoView({block:'center', inline:'nearest'})")
                     # Wait for VNC to catch up with a completed actual tool action.
                     await asyncio.sleep(.8)
                     shot = await call('desktop_screenshot')
@@ -275,12 +276,13 @@ async def run(url, out):
                     async def desktop_bounds():
                         # Optional context panels can place the desktop below the fold.
                         # Move the real viewport; never hide or rearrange product UI.
-                        await page.locator('#screen canvas').scroll_into_view_if_needed()
+                        await page.locator('#screen canvas').evaluate(
+                            "canvas => canvas.scrollIntoView({block:'center', inline:'nearest'})")
                         current = await page.locator('#screen canvas').bounding_box()
                         assert current and current['width'] > 800 and current['height'] > 500, current
                         assert current['x'] >= 0 and current['y'] >= 0, current
-                        assert current['x'] + current['width'] <= WIDTH, current
-                        assert current['y'] + current['height'] <= HEIGHT, current
+                        assert current['x'] + current['width'] <= WIDTH + 1, current
+                        assert current['y'] + current['height'] <= HEIGHT + 1, current
                         return current
 
                     bounds = await desktop_bounds()

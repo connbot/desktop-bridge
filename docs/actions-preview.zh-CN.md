@@ -7,8 +7,8 @@ Cloudflare 提供 HTTPS 地址，ChatGPT 通过 OAuth + Streamable HTTP 调用�
 ## 最短路径：临时地址
 
 1. 在 GitHub 仓库 Settings → Secrets and variables → Actions 新建 repository secret：
-   `BRIDGE_OWNER_TOKEN`。值使用密码管理器生成的 40 位以上随机字符串，最长 256 位，
-   不含空格。只在 GitHub 的 secret 输入框和本服务的登录页输入，不要发到聊天、
+   `BRIDGE_OWNER_TOKEN`。值支持普通密码或口令，8–256 个字符，允许空格和符号（不能全是空白）。
+   建议使用独立的随机密码，不要复用其他账号的密码。只在 GitHub 的 secret 输入框和本服务的登录页输入，不要发到聊天、
    workflow inputs、Issue、代码或日志。它允许登录并批准电脑访问。
 2. 打开 Actions → **Launch MCP preview** → Run workflow。
    `mode=preview`，`tunnel=quick`，默认运行 60 分钟。可以选 30/120/300 分钟。

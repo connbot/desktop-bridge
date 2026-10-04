@@ -25,7 +25,7 @@ def test_preview_origin_and_configuration():
 
 
 @pytest.mark.parametrize("env", [
-    {}, {"BRIDGE_OWNER_TOKEN": "short"}, {"BRIDGE_OWNER_TOKEN": "a" * 40 + "\n"},
+    {}, {"BRIDGE_OWNER_TOKEN": "short"}, {"BRIDGE_OWNER_TOKEN": " " * 40},
     {"PREVIEW_MODE": "verify", "PREVIEW_MINUTES": "301"},
     {"PREVIEW_MODE": "verify", "PREVIEW_MINUTES": "0"},
     {"PREVIEW_MODE": "verify", "TUNNEL_KIND": "named", "PREVIEW_PUBLIC_URL": "https://x.test"},
@@ -34,3 +34,8 @@ def test_preview_origin_and_configuration():
 def test_preview_fails_closed(env):
     with pytest.raises(ValueError):
         preview.configuration(env)
+
+
+def test_preview_accepts_normal_password_and_spaces():
+    assert preview.configuration({"BRIDGE_OWNER_TOKEN": "eight-OK"})[0] == "preview"
+    assert preview.configuration({"BRIDGE_OWNER_TOKEN": "test phrase with spaces"})[0] == "preview"

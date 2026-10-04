@@ -93,3 +93,13 @@ def test_throttles(auth):
         auth.throttle("login")
     with pytest.raises(BridgeError):
         auth.throttle("login")
+
+
+def test_owner_password_accepts_eight_characters_and_spaces():
+    for password in ["eight-OK", "test phrase with spaces"]:
+        auth = Auth(password, "https://bridge.example")
+        sid, csrf = auth.login(password)
+        auth.check_csrf(sid, csrf)
+    for password in ["short", " " * 40, "x" * 257]:
+        with pytest.raises(ValueError):
+            Auth(password, "https://bridge.example")

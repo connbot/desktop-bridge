@@ -23,8 +23,8 @@ def digest(value: str) -> str:
 
 class Auth:
     def __init__(self, owner_token: str, base_url: str):
-        if len(owner_token) < 32:
-            raise ValueError("BRIDGE_OWNER_TOKEN must contain at least 32 characters")
+        if not 8 <= len(owner_token) <= 256 or not owner_token.strip():
+            raise ValueError("BRIDGE_OWNER_TOKEN must contain 8–256 characters and not be blank")
         self.owner_hash = digest(owner_token)
         self.base_url = base_url.rstrip("/")
         self.clients = {}

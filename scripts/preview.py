@@ -39,9 +39,9 @@ def configuration(env):
         raise ValueError("Preview lifetime must be 10–300 minutes")
     owner = env.get("BRIDGE_OWNER_TOKEN", "")
     if mode == "preview" and (
-        not 32 <= len(owner) <= 256 or any(c.isspace() for c in owner)
+        not 8 <= len(owner) <= 256 or not owner.strip()
     ):
-        raise ValueError("Set repository Actions secret BRIDGE_OWNER_TOKEN (32–256 non-space characters)")
+        raise ValueError("Set repository Actions secret BRIDGE_OWNER_TOKEN (8–256 characters; not blank)")
     base = ""
     if kind == "named":
         base = public_origin(env.get("PREVIEW_PUBLIC_URL", ""))

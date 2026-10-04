@@ -1,0 +1,70 @@
+name: Launch MCP preview
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'preview: interactive development session; verify: short tunnel smoke test'
+        type: choice
+        options: [preview, verify]
+        default: preview
+      tunnel:
+        description: 'quick: temporary URL; named: your preconfigured stable hostname'
+        type: choice
+        options: [quick, named]
+        default: quick
+      minutes:
+        description: 'Preview lifetime after readiness (10–300 minutes)'
+        type: choice
+        options: ['30', '60', '120', '300']
+        default: '60'
+      public_url:
+        description: 'Named tunnel only: https://your-hostname (no /mcp suffix)'
+        type: string
+        default: ''
+  push:
+    branches: [main]
+    paths: ['.github/workflows/preview.yml', 'scripts/preview.py', 'scripts/tunnel_smoke.py']
+permissions:
+  contents: read
+concurrency:
+  group: desktop-preview-${{ github.event_name }}
+  cancel-in-progress: false
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    env:
+      PREVIEW_MODE: ${{ github.event_name == 'push' && 'verify' || inputs.mode }}
+      TUNNEL_KIND: ${{ github.event_name == 'push' && 'quick' || inputs.tunnel }}
+      PREVIEW_MINUTES: ${{ inputs.minutes || '60' }}
+      PREVIEW_PUBLIC_URL: ${{ inputs.public_url }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Check preview configuration
+        env:
+          BRIDGE_OWNER_TOKEN: ${{ github.event_name == 'workflow_dispatch' && secrets.BRIDGE_OWNER_TOKEN || '' }}
+          TUNNEL_TOKEN: ${{ github.event_name == 'workflow_dispatch' && secrets.CLOUDFLARE_TUNNEL_TOKEN || '' }}
+        run: python scripts/preview.py --check
+      - name: Install pinned tunnel client and test dependencies
+        run: |
+          curl --fail --silent --show-error --location --retry 3 \
+            https://github.com/cloudflare/cloudflared/releases/download/2026.9.3/cloudflared-linux-amd64 \
+            -o "$RUNNER_TEMP/cloudflared"
+          echo "77e26d8d900e0b8469f416239d14b5f296525fdf79fee6f511ef55609e3fbac2  $RUNNER_TEMP/cloudflared" | sha256sum --check
+          chmod +x "$RUNNER_TEMP/cloudflared"
+          pip install 'httpx==0.28.1' 'websockets==15.0.1'
+      - name: Build desktop
+        run: docker build -t desktop-bridge:preview .
+      - name: Start authenticated HTTPS MCP preview
+        env:
+          BRIDGE_OWNER_TOKEN: ${{ github.event_name == 'workflow_dispatch' && secrets.BRIDGE_OWNER_TOKEN || '' }}
+          TUNNEL_TOKEN: ${{ github.event_name == 'workflow_dispatch' && secrets.CLOUDFLARE_TUNNEL_TOKEN || '' }}
+        run: python scripts/preview.py
+      - name: Remove disposable desktop and volumes
+        if: always()
+        run: docker rm -fv bridge-preview 2>/dev/null || true

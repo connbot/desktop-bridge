@@ -260,3 +260,20 @@ def test_limits_hosts_and_websocket_auth(app):
         with pytest.raises(WebSocketDisconnect):
             with c.websocket_connect("/desktop/control", headers={"Origin": "http://testserver"}):
                 pytest.fail("Human write socket accepted while agent owns control")
+
+
+def test_oauth_login_redirect_uses_public_https_origin_behind_proxy(tmp_path):
+    from urllib.parse import parse_qs, urlsplit
+
+    runtime = Runtime(tmp_path, desktop=FakeDesktop(), browser=FakeBrowser(), coding=FakeCoding())
+    app = create_app(tmp_path, TOKEN, "https://bridge.example", runtime)
+    # Tunnel terminates TLS; origin request is plain HTTP, with an untrusted
+    # X-Forwarded-Proto value. The configured origin is still authoritative.
+    with TestClient(app, base_url="http://bridge.example") as client:
+        registered = client.post("/register", json={"redirect_uris": ["https://client.test/callback"]}).json()
+        response = client.get("/authorize", params={
+            "client_id": registered["client_id"], "redirect_uri": registered["redirect_uris"][0],
+            "response_type": "code", "code_challenge_method": "S256", "code_challenge": "a" * 43,
+        }, headers={"X-Forwarded-Proto": "http"}, follow_redirects=False)
+        target = parse_qs(urlsplit(response.headers["location"]).query)["authorize"][0]
+        assert target.startswith("https://bridge.example/authorize?")

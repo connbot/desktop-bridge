@@ -37,6 +37,19 @@ to loopback; proxy only the gateway port, including WebSockets. Existing client
 accounts and supported connector access are required. Real ChatGPT/Claude UI
 integration has not yet been verified, even when protocol tests pass.
 
+## On-demand GitHub Actions preview
+
+Use **Actions → Launch MCP preview** to run a bounded development/test desktop
+behind a Cloudflare HTTPS tunnel. Quick Tunnel needs only your preconfigured
+`BRIDGE_OWNER_TOKEN` repository secret; a named tunnel can use your own stable
+hostname. The workflow prints the authenticated `/mcp` endpoint after public
+OAuth/MCP/WebSocket checks. [Setup and ChatGPT connection guide (中文)](docs/actions-preview.zh-CN.md).
+
+These runners are disposable: download files before stopping. Quick URLs change
+on restart; named hostnames still require reauthorization after server restart.
+This is not permanent hosting. The workflow never publishes the owner token or
+uploads the browser profile/workspace as an artifact.
+
 ## Controls
 
 - Observe: server-side read-only VNC stream, not only a browser viewOnly flag.
@@ -81,9 +94,9 @@ does not record screens or keystrokes in its activity list. It cannot infer
 whether a click or shell command is a purchase: client approval policy and
 least-privilege accounts are required.
 
-GitHub Actions are used only to build and test repository code, never as a
-long-running hosted desktop. No external model credentials are needed for the
-deterministic end-to-end test suite.
+GitHub Actions build/test repository code and can launch a bounded, manually
+requested development preview. No automatic keep-alive/restart hosting loop is
+provided. No external model credentials are needed for deterministic tests.
 
 ## Reproducibility
 

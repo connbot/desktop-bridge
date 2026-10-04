@@ -501,7 +501,10 @@ def create_app(
         params = dict(request.query_params)
         client = auth.validate_request(params)
         if not auth.session(request.cookies.get("bridge_session")):
-            return RedirectResponse("/?authorize=" + quote(str(request.url), safe=""))
+            # Build from the configured HTTPS origin, not the internal proxy URL.
+            return RedirectResponse(
+                "/?authorize=" + quote(base_url + "/authorize?" + request.url.query, safe="")
+            )
         fields = "".join(
             f'<input type="hidden" name="{html.escape(k, quote=True)}" value="{html.escape(v, quote=True)}">'
             for k, v in params.items()

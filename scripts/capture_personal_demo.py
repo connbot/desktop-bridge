@@ -24,12 +24,13 @@ from urllib.parse import parse_qs, urlsplit
 import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
+from PIL import Image
 from playwright.async_api import async_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / 'demo' / 'personal-workspace'
 OWNER = os.getenv('BRIDGE_DEMO_OWNER_TOKEN', 'test-only-owner-token-not-for-deployment-123')
-WIDTH, HEIGHT = 1600, 1000
+WIDTH, HEIGHT = 1600, 1200
 
 
 def unpack(result):
@@ -167,6 +168,8 @@ async def run(url, out):
                     image = next(content for content in shot.content if content.type == 'image')
                     (out / 'raw' / f'{name}-desktop.png').write_bytes(base64.b64decode(image.data))
                     await page.screenshot(path=str(out / f'{name}.png'))
+                    await page.locator('#screen canvas').screenshot(
+                        path=str(out / f'{name}-desktop-view.png'))
                     (out / f'{name}-snapshot.json').write_text(
                         json.dumps(unpack(await call('browser_snapshot')), indent=2))
 
@@ -239,11 +242,12 @@ async def run(url, out):
                 evidence['verified'].append('Real headed Chromium displays the generated personal workspace')
 
                 async with async_playwright() as pw:
-                    observer = await pw.chromium.launch()
+                    observer = await pw.chromium.launch(args=[f'--window-size={WIDTH},{HEIGHT}'])
                     # HTTP login happened before recording; no tokens, cookies, or OAuth codes appear in shots.
                     cookies = [{'name':cookie.name, 'value':cookie.value, 'url':url}
                                for cookie in http.cookies.jar]
                     context = await observer.new_context(viewport={'width':WIDTH,'height':HEIGHT},
+                        screen={'width':WIDTH,'height':HEIGHT}, device_scale_factor=1,
                         record_video_dir=str(out / 'video'), record_video_size={'width':WIDTH,'height':HEIGHT})
                     await context.add_cookies(cookies)
                     page = await context.new_page()
@@ -264,8 +268,16 @@ async def run(url, out):
                     await page.get_by_role('button',name='Refresh',exact=True).click()
                     await page.get_by_role('link',name='everyday/plans/packing-checklist.md',exact=True).wait_for()
                     await page.screenshot(path=str(out / '00-real-workspace-viewer.png'), full_page=True)
-                    await page.get_by_role('button',name='Full screen',exact=True).click()
-                    await page.wait_for_function('() => !!document.fullscreenElement')
+                    # Keep the observer in its ordinary viewport. Headless fullscreen
+                    # can record only the backing window's 800x600 area, even while
+                    # Playwright screenshots show a complete emulated viewport.
+                    bounds = await page.locator('#screen canvas').bounding_box()
+                    assert bounds and bounds['width'] > 800 and bounds['height'] > 500, bounds
+                    assert bounds['x'] >= 0 and bounds['y'] >= 0, bounds
+                    assert bounds['x'] + bounds['width'] <= WIDTH, bounds
+                    assert bounds['y'] + bounds['height'] <= HEIGHT, bounds
+                    evidence['capture']['video_crop'] = bounds
+                    evidence['capture']['outer_fullscreen'] = False
 
                     async def chapter(title):
                         evidence['chapters'].append({'title':title,
@@ -322,7 +334,6 @@ async def run(url, out):
                     assert '[x] Walking shoes' in downloaded.text and 'Bring the camera' in downloaded.text
                     evidence['verified'].append('The updated checklist was saved through Coding Tools MCP and downloaded from the real artifact API')
                     await chapter('Real exported files')
-                    await page.evaluate('document.exitFullscreen()')
                     await page.get_by_role('button',name='Refresh',exact=True).click()
                     await page.get_by_role('link',name='everyday/outputs/spending-summary.json',exact=True).wait_for()
                     await page.screenshot(path=str(out / '06-files-and-desktop.png'),full_page=True)
@@ -332,6 +343,33 @@ async def run(url, out):
                     saved_video = await video.path()
                     shutil.copyfile(saved_video, out / 'personal-capability-demo.webm')
                     await observer.close()
+                    # Validate real encoded frames, not just page screenshots. The
+                    # bottom-right quarter of the desktop must contain image detail;
+                    # the earlier compositor defect produced a uniform gray matte.
+                    evidence['capture']['verified_video_frames'] = []
+                    for index, item in enumerate(evidence['chapters']):
+                        at = item['video_start_seconds'] + 2
+                        frame = out / f'video-check-{index:02d}.png'
+                        proc = await asyncio.create_subprocess_exec(
+                            'ffmpeg', '-hide_banner', '-loglevel', 'error', '-y',
+                            '-ss', str(at), '-i', str(out / 'personal-capability-demo.webm'),
+                            '-frames:v', '1', str(frame),
+                            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                        _, stderr = await proc.communicate()
+                        assert proc.returncode == 0, stderr.decode(errors='replace')
+                        with Image.open(frame) as rendered:
+                            assert rendered.size == (WIDTH, HEIGHT), rendered.size
+                            x, y, width, height = (bounds[key] for key in ('x','y','width','height'))
+                            detail = rendered.convert('RGB').crop((
+                                int(x + width * .72), int(y + height * .72),
+                                int(x + width * .97), int(y + height * .97)))
+                            colors = detail.getcolors(maxcolors=1000000) or []
+                            assert len(colors) > 16, (
+                                'Encoded video is missing the lower-right desktop region', frame)
+                        evidence['capture']['verified_video_frames'].append({
+                            'file':frame.name, 'at_seconds':round(at,2), 'chapter':item['title']})
+                    evidence['verified'].append(
+                        'Encoded video frames at every chapter retain visible detail in the lower-right desktop region')
                 exports = out / 'exports'
                 for path in ['everyday/tools/index.html','everyday/tools/style.css','everyday/tools/app.js',
                              'everyday/data/sample-spending.csv','everyday/scripts/analyze.py','everyday/scripts/serve.py',

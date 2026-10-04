@@ -379,8 +379,23 @@ async def run(restart):
                         }""",
                             timeout=20000,
                         )
+                        await page.screenshot(path=str(OUT / "viewer-before-controls.png"), full_page=True)
+                        # CI headless browsers do not automatically grant clipboard access.
+                        # First verify the denied-permission fallback, then actual copying.
+                        await page.get_by_role("button", name="Copy endpoint").click()
+                        await page.locator("#copy-feedback").filter(
+                            has_text="Select and copy the endpoint manually."
+                        ).wait_for()
+                        await page.context.grant_permissions(
+                            ["clipboard-read", "clipboard-write"], origin=URL
+                        )
                         await page.get_by_role("button", name="Copy endpoint").click()
                         await page.locator("#copy-feedback").filter(has_text="Endpoint copied").wait_for()
+                        assert await page.evaluate("navigator.clipboard.readText()") == URL + "/mcp"
+                        await page.get_by_role("button", name="Full screen", exact=True).click()
+                        await page.wait_for_function("!!document.fullscreenElement")
+                        await page.evaluate("document.exitFullscreen()")
+                        await page.wait_for_function("!document.fullscreenElement")
                         await page.get_by_role("button", name="Private takeover").click()
                         await page.locator("#status").filter(has_text="PRIVATE").wait_for()
                         await page.get_by_role("button", name="Hand back to AI").click()

@@ -7,8 +7,8 @@ connects your existing AI client to a headed Chromium desktop and your own
 [Coding Tools MCP](https://github.com/xyTom/coding-tools-mcp) by xyTom for file,
 editing, shell, and execution tools.
 
-**Status: runnable self-hosted Hackathon preview.** The same implementation passed
-53 unit/security tests and three clean Docker end-to-end runs, including real
+**Status: runnable self-hosted Hackathon preview.** The verified `c3ce5ae` runtime passed
+288 tests (including real PostgreSQL transactions) and three clean Docker end-to-end runs, including real
 browser OAuth approval, desktop input, view-only enforcement, and restart
 persistence. [Evidence and limits](docs/validation.md).
 

@@ -1,5 +1,20 @@
 # Verification record
 
+## Latest verified Agent Workspace runtime
+
+October 4, 2026, commit [c3ce5ae](https://github.com/connbot/desktop-bridge/commit/c3ce5ae5b886d10b4d347d8e138a42d7cd4e7e8c):
+
+- [288 tests with real TLS PostgreSQL transactions](https://github.com/connbot/desktop-bridge/actions/runs/37238470708) passed. The standard no-database job runs 284 and explicitly skips the four opt-in database tests.
+- [Three independent Docker desktop/browser/OAuth/restart runs](https://github.com/connbot/desktop-bridge/actions/runs/37238470727) passed.
+- [Prepared Fly-target image](https://github.com/connbot/desktop-bridge/actions/runs/37238470639) passed fresh root-owned volume startup, non-root app processes, bounded logging, restart persistence, and unsafe-symlink rejection. This is not an actual Fly account deployment.
+- [Real branded capability capture](https://github.com/connbot/desktop-bridge/actions/runs/37238534974) passed; screenshots and encoded video frames were inspected. It is a rehearsed scripted sequence with sample data, not an autonomous-model benchmark.
+- [Optional-memory UI acceptance](https://github.com/connbot/desktop-bridge/actions/runs/37236979629) passed at preceding runtime `29aa122`: disabled/default behavior, explicit local storage, profile/task forms, cancelled/repeated saves, export/import, fresh-client continuity, and restart. Later branding and MCP hardening were separately covered above.
+- Generic optional MCP tests use real in-process protocol sessions with synthetic services. No AgentMail, Vapi, Neon account, external call/email, or sponsor credential was used. Authenticated vendor interoperability remains to be verified after owner setup.
+
+Memory and MCP plugins are optional and require explicit configuration. Changes currently take effect after restart; this is not zero-downtime hot replacement. The client supplies the model loop; inbound email events need a separate event/runner integration. See [optional MCP](optional-mcp.md), [context providers](context-providers.md), and [Fly setup](fly-deployment.md).
+
+## Earlier verification history
+
 Date: 2026-10-04. Runtime implementation at
 [22bf7e3](https://github.com/connbot/desktop-bridge/commit/22bf7e3a8fd9deda3e7d1e58383a2d46f4cba32c).
 

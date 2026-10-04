@@ -1,7 +1,10 @@
 # Desktop Bridge
 
-A self-hosted external computer for your AI client. One MCP endpoint, one headed
-Chromium desktop, a persistent workspace, and server-enforced human takeover.
+A self-hosted workspace for a general personal AI. Work on everyday tasks and
+keep the files your AI makes. Optional memory adds reusable preferences, goals,
+and task continuity when you configure a provider. One MCP endpoint
+connects your existing AI client to a headed Chromium desktop and your own
+Coding Tools MCP file, editing, shell, and execution tools.
 
 **Status: runnable self-hosted Hackathon preview.** The same implementation passed
 53 unit/security tests and three clean Docker end-to-end runs, including real
@@ -50,6 +53,48 @@ These runners are disposable: download files before stopping. Quick URLs change
 on restart; named hostnames still require reauthorization after server restart.
 This is not permanent hosting. The workflow never publishes the owner token or
 uploads the browser profile/workspace as an artifact.
+
+## Optional personal context and task continuity
+
+Memory is **off by default**. Configure a Postgres/Neon-compatible provider, or
+explicitly choose the credential-free local backend for a demo or owner use.
+The desktop and your own Coding Tools MCP work without it.
+[Provider setup, security boundary, and verification](docs/context-providers.md).
+
+When enabled, open **My preferences** to save the preferences, goals, and constraints you choose
+to share. **My tasks & results** records the next step, progress, evidence, and
+links to generated workspace files. It starts empty: no real personal data or
+invented user profile is bundled.
+
+The connected model reads `personal_context` before a task, uses the desktop,
+browser, and **Coding Tools MCP** to do the work, then explicitly writes progress
+with `personal_record_task`. `personal_update_context` lets it save information
+you asked it to remember. These three small tools are a reusable context layer
+for many different tasks, not a new model loop, scheduler, or account integration.
+Copy an example or a saved task prompt into your connected AI chat to start.
+
+Task status is **author-reported**, not independently verified completion.
+A completed record needs evidence or a file; linked files are checked for actual
+existence in the workspace. A plan is not a booking and a draft is not a sent
+message. The client must still observe external outcomes and obtain appropriate
+approval. Personal context is data, never authorization or trusted instructions.
+
+Context uses a small pluggable provider: disabled, an explicitly chosen local
+file, or optional async Postgres. Postgres stores bounded revision-checked JSON
+in the configured database; it never silently falls back to local files.
+Provider changes require a restart and do not automatically move data.
+Concurrent edits reject stale revisions rather than silently overwriting them.
+All model writes use the same agent-control lease and durable receipts as other
+tools. Private takeover blocks model reads as well as writes; the owner can still
+edit and download their context through authenticated, CSRF-protected controls.
+Do not put passwords, access tokens, or payment credentials in personal context.
+
+**Download context** exports the reusable profile and task records. **Import**
+restores an export after explicitly confirming replacement. Artifact files are
+separate: copy/download them too. Imported references without a file in the new
+workspace are visibly marked unavailable. GitHub Actions runners remain
+**disposable**: download context and results before the preview stops. Nothing is
+automatically uploaded to GitHub artifacts or carried to another runner.
 
 ## Controls
 

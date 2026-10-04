@@ -12,7 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 COPY pyproject.toml README.md constraints.txt ./
 COPY src ./src
-RUN pip install --no-cache-dir -c constraints.txt '.[desktop]'
+ARG BRIDGE_PYTHON_EXTRAS=desktop
+RUN pip install --no-cache-dir -c constraints.txt ".[${BRIDGE_PYTHON_EXTRAS}]"
 COPY docker/supervisord.conf /etc/supervisor/supervisord.conf
 COPY docker/start-browser.sh /usr/local/bin/start-browser
 RUN chmod +x /usr/local/bin/start-browser

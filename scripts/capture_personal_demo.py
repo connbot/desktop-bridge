@@ -195,15 +195,14 @@ async def run(url, out):
 
                 async def probe_server(label):
                     result = await coding('coding_exec_command', {
-                        'cmd': "python -c 'import urllib.request; "
-                               "body=urllib.request.urlopen("
-                               "\"http://127.0.0.1:8765/tools/index.html\",timeout=3).read(); "
-                               "assert b\"Everyday Studio\" in body; print(\"DEMO_HTTP_READY\")'",
-                        'yield_time_ms':5000, 'timeout_ms':6000, 'max_output_bytes':5000}, allow_error=True)
+                        'cmd': 'curl --fail --silent --show-error --max-time 3 http://127.0.0.1:8765/tools/index.html',
+                        'yield_time_ms':5000, 'timeout_ms':6000, 'max_output_bytes':10000}, allow_error=True)
                     (out / f'{label}-probe.json').write_text(
                         json.dumps(result.model_dump(mode='json'), indent=2))
                     info = result.structuredContent or {}
-                    return info.get('exit_code') == 0 and 'DEMO_HTTP_READY' in str(result)
+                    if result.isError and (info.get('error') or {}).get('code') == 'PERMISSION_REQUIRED':
+                        raise RuntimeError('Readiness probe requires permission; see diagnostic artifact')
+                    return info.get('exit_code') == 0 and 'Everyday Studio' in str(result)
 
                 # Preserve diagnostic evidence from the standard server first. If its
                 # request handling fails, retry with the constrained demo-only server;

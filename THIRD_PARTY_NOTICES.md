@@ -1,6 +1,6 @@
 # Third-party components
 
-Agent Workspace's own source is Apache-2.0. Upstream projects retain their
+Agent Computer's own source is Apache-2.0. Upstream projects retain their
 copyrights and licenses. This repository imports packages; it does not claim
 their implementation as original work.
 

@@ -138,7 +138,7 @@ def main():
             else:
                 raise RuntimeError("Desktop failed readiness after clearing test state")
         expiry = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(time.time() + minutes * 60))
-        summary(f"## Agent Workspace development preview\n\nMCP endpoint: {base}/mcp\n\nDesktop and OAuth login: {base}\n\nAuthentication: OAuth with dynamic client registration and PKCE. Sign in using your BRIDGE_OWNER_TOKEN; never paste it into ChatGPT.\n\nScheduled stop: {expiry}. Cancel this workflow to stop early. Download needed files before stopping: the desktop and its data are disposable.\n\nQuick URLs change on restart. This session is for developing and testing Agent Workspace, not permanent hosting.")
+        summary(f"## Agent Computer development preview\n\nMCP endpoint: {base}/mcp\n\nDesktop and OAuth login: {base}\n\nAuthentication: OAuth with dynamic client registration and PKCE. Sign in using your BRIDGE_OWNER_TOKEN; never paste it into ChatGPT.\n\nScheduled stop: {expiry}. Cancel this workflow to stop early. Download needed files before stopping: the desktop and its data are disposable.\n\nQuick URLs change on restart. This session is for developing and testing Agent Computer, not permanent hosting.")
         deadline = time.monotonic() + minutes * 60
         failures = 0
         with httpx.Client(timeout=10) as client:

@@ -1,6 +1,6 @@
 # Verification record
 
-## Latest verified Agent Workspace runtime
+## Latest verified runtime (before the Agent Computer relaunch)
 
 October 4, 2026, commit [c3ce5ae](https://github.com/connbot/desktop-bridge/commit/c3ce5ae5b886d10b4d347d8e138a42d7cd4e7e8c):
 

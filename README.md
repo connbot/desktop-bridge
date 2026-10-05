@@ -1,219 +1,148 @@
-# Agent Workspace
+# Agent Computer
 
-Give your existing AI a visible browser, controllable desktop, and files it can
-create and edit, with one MCP connection powered by
-[xyTom's Coding Tools MCP](https://github.com/xyTom/coding-tools-mcp).
+**Muse-style computer use, inside ChatGPT.**
 
-## Quickstart
+Want the computer-use side of [Muse](https://introducing.muse.ai/) or [dots](https://chatgpt.com/features/dots/) in your existing ChatGPT?
 
-1. **Start your workspace:** follow [Run](#run) below to configure and launch it
-   with Docker Compose, then open the desktop viewer.
-2. **Connect your AI client:** use the workspace's `/mcp` endpoint with OAuth.
-   A remote client such as ChatGPT needs a reachable HTTPS deployment; see
-   [Run](#run) for the public origin and proxy requirements.
-3. **Give it a task:** let the client use the browser and file tools, watch the
-   desktop, and inspect the saved result. **Take control** lets you take over.
+Agent Computer is an open-source project that connects ChatGPT to a self-hosted Linux desktop. It gives ChatGPT a browser, terminal, and persistent files for concrete work: research a topic, run a script, or build and check a small web page. Watch the work happen and download the result. ChatGPT drives the tasks; this project provides the computer.
 
-### Connect from ChatGPT on the web
+File editing, shell commands, and code execution are powered by **[Coding Tools MCP](https://github.com/xyTom/coding-tools-mcp), also built by xyTom**. One MCP connection brings those tools and the browser into the same workspace.
 
-1. Open **Settings → Apps → Advanced settings → Developer mode**. Availability
-   and write-tool access depend on your plan and workspace permissions; an admin
-   may need to enable access.
-2. Go to **Apps → Create**, name the app **Agent Workspace**, enter
-   `https://YOUR_HOST/mcp` (replace `YOUR_HOST` with your deployed workspace's
-   hostname), and choose **OAuth** authentication.
-3. Click **Scan Tools**, complete the workspace login and OAuth approval in
-   your browser, wait for the scan, then click **Create**. Never paste the
-   workspace's owner token into an AI chat.
-4. Open a chat and select **Agent Workspace** from the tools/apps menu. Confirm
-   any requested actions, and keep the desktop viewer open to watch the work.
+**Self-hosted preview · One trusted owner**
 
-See OpenAI's current [developer mode and MCP app instructions](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt)
-for plan-specific setup. Reauthenticate when the workspace's one-hour access
-grant expires.
+## What can you use it for?
 
-### A concrete task to try
+- **Research with a saved result.** Visit official sources, compare options, and save a short report with links.
+- **Work with files.** Read workspace files, transform sample data with a script, and save the output for download.
+- **Build something small.** Write an HTML page or a personal tool, open it in Chromium, and check how it looks.
+- **Improve the result.** Ask for a change, check the revised file in the same environment, and download it when it is ready.
 
-> Use Agent Workspace's browser to find three free things to do in San Francisco
-> this weekend. Check the official sources for dates and opening hours, then save
-> a short plan with source links as `weekend-options.md` in the workspace.
-> Read the saved file back to verify it, then show me where to find it.
+These are task ideas, not success-rate benchmarks. Start with public information and sample files.
 
-This task uses the running workspace's browser and file tools; it does not
-require starting an additional shell server. Use fictional data while testing,
-and avoid personal high-value accounts. The workspace is for one trusted owner,
-not independent users sharing a secure multi-tenant service.
+## How it works
 
-**Optional capabilities:** [Personal memory](#optional-personal-context-and-task-continuity)
-and [external MCP plugins](docs/optional-mcp.md) are configurable and disabled
-by default. Neon and Vapi require separate accounts, credentials, and setup;
-including an adapter does not establish a live service connection. Your existing
-AI client runs the model loop; the server has no autonomous background model loop.
+```text
+ChatGPT → OAuth + MCP → Agent Computer
+                       ├─ Linux desktop + Chromium
+                       ├─ Coding Tools MCP → files, terminal, code
+                       └─ Web viewer → watch the desktop, download files
+```
 
-## Project overview
+You run the computer. ChatGPT supplies the model, plans the task, and calls its tools. The server provides the desktop and execution environment; it has no background model loop or scheduler. When the client stops calling tools, the server does not continue reasoning on its own.
 
-A self-hosted workspace for a general personal AI. Work on everyday tasks and
-keep the files your AI makes. Optional memory adds reusable preferences, goals,
-and task continuity when you configure a provider. One MCP endpoint
-connects your existing AI client to a headed Chromium desktop and your own
-[Coding Tools MCP](https://github.com/xyTom/coding-tools-mcp) by xyTom for file,
-editing, shell, and execution tools.
+Browser automation and desktop control use the same visible Chromium session. Files live in `/data/workspace` on a persistent Docker volume. Other MCP clients can connect if they support Streamable HTTP and the required OAuth flow; account-specific compatibility still needs testing.
 
-**Status: runnable self-hosted Hackathon preview.** The verified `c3ce5ae` runtime passed
-288 tests (including real PostgreSQL transactions) and three clean Docker end-to-end runs, including real
-browser OAuth approval, desktop input, view-only enforcement, and restart
-persistence. [Evidence and limits](docs/validation.md).
+## Get started
 
-Single trusted owner only; this is not a production multi-tenant security boundary.
-The model loop lives in your MCP client, not in this server.
+### 1. Start the computer
 
-## Run
+Requires Docker Compose, Python 3, and roughly 3 GB of RAM. Linux x86-64 is the validated target; macOS/Windows Docker Desktop and ARM have not been verified.
 
-Requires Docker Compose, Python 3, and roughly 3 GB RAM. Linux x86-64 is the first
-validation target. macOS/Windows Docker Desktop support is not yet verified.
+The source currently lives at [connbot/desktop-bridge](https://github.com/connbot/desktop-bridge):
 
 ```sh
+git clone https://github.com/connbot/desktop-bridge.git
+cd desktop-bridge
 python3 scripts/setup.py
 docker compose up --build -d
 docker compose logs -f desktop
 ```
 
-Open http://localhost:8080 and sign in using BRIDGE_OWNER_TOKEN from your local
-.env. Never paste that owner token into a model conversation. The token is for
-your viewer and OAuth approval, not direct MCP bearer authentication.
+Open **http://localhost:8080**. Sign in with `BRIDGE_OWNER_TOKEN` from your local `.env` file. The setup script creates that file and keeps it private.
 
-Connect a trusted MCP client to http://localhost:8080/mcp using Streamable HTTP
-and OAuth (authorization code, S256 PKCE, dynamic client registration). Approval
-shows the client and callback. Access grants expire after one hour; reconnect to
-renew. Disconnect & revoke revokes all viewer sessions and OAuth grants.
+Keep the token out of chats, source control, and logs. It is for owner login and OAuth approval, not a bearer token to paste into the MCP client.
 
-For remote ChatGPT/Claude connectors, deploy on your own host behind HTTPS and
-set BRIDGE_PUBLIC_URL to the exact public origin. Keep the container port bound
-to loopback; proxy only the gateway port, including WebSockets. Existing client
-accounts and supported connector access are required. The owner confirmed successful ChatGPT connection and live tool calls on
-October 4, 2026. Claude account onboarding and broad autonomous task success
-are not verified by our protocol tests.
+### 2. Make it reachable from ChatGPT
 
-## On-demand GitHub Actions preview
+The local `/mcp` endpoint is ready for clients that can reach your machine. For the remote ChatGPT connection described here, deploy behind HTTPS on a host you control:
 
-Use **Actions → Launch MCP preview** to run a bounded development/test desktop
-behind a Cloudflare HTTPS tunnel. Quick Tunnel needs only your preconfigured
-`BRIDGE_OWNER_TOKEN` repository secret; a named tunnel can use your own stable
-hostname. The workflow prints the authenticated `/mcp` endpoint after public
-OAuth/MCP/WebSocket checks. [Setup and ChatGPT connection guide (中文)](docs/actions-preview.zh-CN.md).
+1. Set `BRIDGE_PUBLIC_URL` in `.env` to the exact public origin, such as `https://computer.example.com`.
+2. Restart the service with `docker compose up -d`.
+3. Reverse-proxy the gateway at `127.0.0.1:8080`, including WebSockets. See the [Caddy example](docs/Caddyfile.example).
 
-These runners are disposable: download files before stopping. Quick URLs change
-on restart; named hostnames still require reauthorization after server restart.
-This is not permanent hosting. The workflow never publishes the owner token or
-uploads the browser profile/workspace as an artifact.
+Keep the container port bound to loopback. Never expose raw VNC or CDP ports, or mount the Docker socket into the container.
 
-## Optional personal context and task continuity
+Your MCP URL will be `https://YOUR_HOST/mcp`.
 
-Memory is **off by default**. Configure a Postgres/Neon-compatible provider, or
-explicitly choose the credential-free local backend for a demo or owner use.
-The desktop and your own Coding Tools MCP work without it.
-[Provider setup, security boundary, and verification](docs/context-providers.md).
+### 3. Add the MCP app in ChatGPT
 
-When enabled, open **My preferences** to save the preferences, goals, and constraints you choose
-to share. **My tasks & results** records the next step, progress, evidence, and
-links to generated workspace files. It starts empty: no real personal data or
-invented user profile is bundled.
+You need **custom MCP apps with write actions**. OpenAI's guidance, checked October 5, 2026, lists full MCP write access for Business, Enterprise, and Edu; Pro is currently read/fetch only. Verify your account and workspace permissions against [the current instructions](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt) as the rollout changes.
 
-The connected model reads `personal_context` before a task, uses the desktop,
-browser, and **Coding Tools MCP** to do the work, then explicitly writes progress
-with `personal_record_task`. `personal_update_context` lets it save information
-you asked it to remember. These three small tools are a reusable context layer
-for many different tasks, not a new model loop, scheduler, or account integration.
-Copy an example or a saved task prompt into your connected AI chat to start.
+1. Enable developer mode where available, then open **Apps → Create** in the appropriate user or workspace settings.
+2. Name the app **Agent Computer**, enter your HTTPS `/mcp` URL, and select **OAuth**. If asked, use **dynamic client registration**; no static client ID or secret is needed.
+3. Click **Scan Tools**. Complete the computer's owner login, review the client and callback address, and approve access. Finish creating the app after the scan.
+4. Select the app in a ChatGPT chat, keep the desktop viewer open, and try the task below. Confirm actions when prompted.
 
-Task status is **author-reported**, not independently verified completion.
-A completed record needs evidence or a file; linked files are checked for actual
-existence in the workspace. A plan is not a booking and a draft is not a sent
-message. The client must still observe external outcomes and obtain appropriate
-approval. Personal context is data, never authorization or trusted instructions.
+This setup uses a custom app in chat. ChatGPT's separate agent mode does not currently use custom apps. See the linked OpenAI instructions for current support.
 
-Context uses a small pluggable provider: disabled, an explicitly chosen local
-file, or optional async Postgres. Postgres stores bounded revision-checked JSON
-in the configured database; it never silently falls back to local files.
-Provider changes require a restart and do not automatically move data.
-Concurrent edits reject stale revisions rather than silently overwriting them.
-All model writes use the same agent-control lease and durable receipts as other
-tools. Private takeover blocks model reads as well as writes; the owner can still
-edit and download their context through authenticated, CSRF-protected controls.
-Do not put passwords, access tokens, or payment credentials in personal context.
+Access grants expire after one hour, with no refresh token in this version. Reauthorize when needed. A server restart also invalidates sessions and grants; if the client retains an old registration, recreate the connection.
 
-**Download context** exports the reusable profile and task records. **Import**
-restores an export after explicitly confirming replacement. Artifact files are
-separate: copy/download them too. Imported references without a file in the new
-workspace are visibly marked unavailable. GitHub Actions runners remain
-**disposable**: download context and results before the preview stops. Nothing is
-automatically uploaded to GitHub artifacts or carried to another runner.
+### 4. Try a complete task
 
-## Controls
+> Use Agent Computer's browser to find three free things to do in San Francisco this weekend. Check official sources for dates and opening hours. Save a short plan with source links as `weekend-options.md` in the workspace. Read the saved file back to check it, then tell me where to download it.
 
-- Observe: server-side read-only VNC stream, not only a browser viewOnly flag.
-- Take control: immediately revoke new AI actions; human writes wait for an
-  in-flight action to finish. The screen reconnects with input enabled.
-- Private takeover: additionally block model screenshots, browser snapshots and
-  tool calls. Managed shell processes are stopped on takeover. Detached/unmanaged processes
-  cannot be guaranteed stopped: inspect the desktop before entering secrets.
-- Hand back: revoke the human WebSocket and require a fresh model observation.
-- Pause/Stop: block new AI actions. Stop is logical session control, not a Docker
-  shutdown or a promise to undo already launched external work. Managed shell
-  processes receive TERM/KILL when paused, stopped or taken over.
+In the viewer, click **Refresh** under **Your files** to find the output. This exercises the browser, file tools, and a result you can inspect.
 
-All GUI/browser writes carry fresh observation IDs and durable action receipts.
-A lost-response action is never automatically replayed. A restart preserves
-workspace/profile/receipts, revokes authentication and requires a fresh session.
+## Stay in control
 
-## Reused components and credit
+- **Watch:** the default viewer is server-enforced read-only.
+- **Take control:** block new AI actions and take keyboard/mouse control after any in-flight action finishes.
+- **Private takeover:** also block model observations and tool access. Inspect the session before entering secrets; unmanaged background processes may still be running.
+- **Hand back to AI:** return control and require a fresh model observation.
+- **Pause AI / Stop:** block new AI actions and terminate tracked managed shell processes. Stop controls the session; it does not shut down Docker or undo external actions.
+- **Disconnect & revoke:** revoke all owner viewer sessions and OAuth grants.
 
-- Cua's pinned VNCAutomationHandler supplies desktop capture/pointer/key actions.
-- Playwright connects to the same headed Chromium via loopback CDP.
-- xyTom/coding-tools-mcp supplies file, shell, process and code editing tools over
-  private stdio, all routed through the same control lease.
-- noVNC provides the desktop viewer. x11vnc enforces the view-only channel.
+Writes use action receipts to avoid blindly replaying uncertain operations. Takeover cannot undo a submitted form, a completed purchase, or another external side effect. The connected client remains responsible for user approval.
 
-This is an implementation of the external-computer architecture in the supplied
-OpenDots proposal. It is not affiliated with diggerhq/opendots, OpenAI dots or Cua.
-The new name avoids claiming the existing OpenDots name.
+## Keep your work
 
-## Security limits
+The Docker volume preserves workspace files, the browser profile, and action receipts across container restarts. A restart does not restore running processes or resume a model task.
 
-One trusted owner. The shell and browser can access container-local services;
-this is **not** isolation against malicious agents, commands or multi-tenant
-users. Chromium runs without its inner sandbox inside a non-root container.
-Do not use personal high-value accounts or untrusted code. No Docker socket is
-mounted; raw VNC/CDP are loopback only and not published. Network egress is not
-restricted. A container shares its host kernel.
+```sh
+docker compose stop    # Stop the computer
+docker compose start   # Start it again
+```
 
-The persistent volume contains your browser profile and tool result receipts,
-which can include sensitive file contents. Treat it as private data. The server
-does not record screens or keystrokes in its activity list. It cannot infer
-whether a click or shell command is a purchase: client approval policy and
-least-privilege accounts are required.
+Download or back up files you want to keep. Avoid `docker compose down -v` unless you intend to delete the volume and its data.
 
-GitHub Actions build/test repository code and can launch a bounded, manually
-requested development preview. No automatic keep-alive/restart hosting loop is
-provided. No external model credentials are needed for deterministic tests.
+For temporary development sessions, the repository also includes an [on-demand GitHub Actions preview](docs/actions-preview.zh-CN.md). It is disposable, bounded hosting: download results before it ends. Temporary tunnel URLs change between runs.
 
-## Reproducibility
+## Optional memory and tools
 
-Python package versions are constrained in constraints.txt; GitHub Actions are
-pinned to the resolved commit SHAs. Coding Tools is pinned to reviewed commit
-[a2b8021](https://github.com/connbot/coding-tools-mcp/commit/a2b802171bee1f990effa55f955efa2eddde4c59),
-including its non-blocking repeated-failure behavior and encoding fixes, rather
-than a mutable branch. This is a reviewed pre-release commit, not a new published
-package version. Debian system packages and the Python base tag still receive
-upstream updates; a rebuild is not claimed to be byte-for-byte identical.
+The desktop works without these features. Both are **off by default**:
 
-[中文上手与演示](docs/quickstart.zh-CN.md) · [Architecture](docs/architecture.md) ·
-[Third-party credit](THIRD_PARTY_NOTICES.md)
+- **[Personal context](docs/context-providers.md):** save selected preferences, goals, task progress, and result references in an explicitly configured local or Postgres-compatible store. The client must read and update them; a saved task does not start itself. Task status is author-reported, and exporting context does not export the linked files.
+- **[External MCP tools](docs/optional-mcp.md):** expose an explicit allowlist of tools from owner-configured remote MCP servers. Accounts, credentials, service compatibility, and permission for consequential actions require separate setup. Included examples do not mean a live service is connected.
 
-## Optional services and hosting
+Configuration changes require a restart. No model API key is needed for the ChatGPT connection above. Optional third-party services may require their own credentials.
 
-Add owner-selected external tools with the [optional MCP registry](docs/optional-mcp.md).
-Services stay disabled until configured; provider/config changes require restart.
-[Prepare Fly deployment](docs/fly-deployment.md) without an account or credentials.
-The adapter/template is implemented; real vendor accounts and a Fly deployment
-still need separate setup and verification. Your existing MCP client owns the model loop.
+## Security and current limits
+
+Use this with one trusted owner and low-sensitivity data. The browser, gateway, and shell share one container. This is not a security boundary against malicious code, a hostile agent, or independent tenants.
+
+- Chromium runs without its inner sandbox inside a non-root container. The container shares the host kernel, and network egress is not restricted.
+- Shell commands can reach container-local services. Environment scrubbing and private ports do not isolate valuable credentials from arbitrary code in that container.
+- The persistent volume includes browser sessions and tool receipts, which may contain sensitive output. Protect it like other private data.
+- Use test accounts and minimal permissions. Avoid high-value personal accounts and untrusted code. The server cannot decide whether an action is a purchase or whether the user has approved it.
+- Website compatibility, client permissions, task success, and behavior on unverified host platforms vary.
+
+## Verification and implementation
+
+The [verification record](docs/validation.md) documents Linux x86-64 Docker tests for real browser/desktop control, OAuth, Coding Tools operations, takeover, view-only enforcement, and restart persistence. The owner also reported successful ChatGPT connection and live tool calls on October 4, 2026. These are integration checks and a specific client report, not an autonomous-task benchmark or a guarantee for every account.
+
+[Architecture](docs/architecture.md) · [Chinese setup guide](docs/quickstart.zh-CN.md) · [Optional Fly deployment](docs/fly-deployment.md)
+
+### Credits and license
+
+- **[Coding Tools MCP by xyTom](https://github.com/xyTom/coding-tools-mcp):** files, shell, processes, and code editing through private stdio.
+- **Cua:** desktop screenshots, pointer, and keyboard control.
+- **Playwright:** structured browser actions in the same Chromium session.
+- **noVNC and x11vnc:** the live desktop viewer and server-enforced view-only channel.
+
+The project's source is [Apache-2.0](LICENSE). Dependencies retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md). This is an independent project with no OpenAI or Cua affiliation.
+
+Dependencies are pinned where practical, including the reviewed Coding Tools commit identified in `pyproject.toml`. Base images and Debian packages can change, so rebuilds are not claimed to be byte-for-byte identical.
+
+## Share the project
+
+[Chinese and English community launch copy, title options, and demo storyboard](docs/community-launch.txt).

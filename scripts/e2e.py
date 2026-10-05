@@ -142,13 +142,13 @@ async def run(restart):
                     )
                 else:
                     await browser({"kind": "navigate", "url": URL + "/static/demo.html"})
-                    assert unpack(await call("browser_snapshot"))["title"] == "Agent Workspace · Acceptance lab"
+                    assert unpack(await call("browser_snapshot"))["title"] == "Agent Computer · Acceptance lab"
                     results.append("Structured Playwright operates visible headed Chromium")
                     await browser({"kind": "click", "role": "textbox", "name": "Project note"})
-                    await gui({"kind": "type", "text": "你好，Hackathon!\nUTF-8 ✓"})
+                    await gui({"kind": "type", "text": "你好，Agent Computer!\nUTF-8 ✓"})
                     await browser({"kind": "click", "role": "button", "name": "Save note"})
                     snap = unpack(await call("browser_snapshot"))
-                    assert "你好，Hackathon!" in snap["snapshot"], snap
+                    assert "你好，Agent Computer!" in snap["snapshot"], snap
                     results.append("Real Cua keyboard paste handles Chinese, newline and symbols")
                     obs, png = await observe()
                     (OUT / "desktop.png").write_bytes(png)

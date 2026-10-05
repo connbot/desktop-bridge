@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Record a genuine, deterministic Agent Workspace capability demonstration.
+"""Record a genuine, deterministic Agent Computer capability demonstration.
 
 This is a rehearsed MCP test driver, not an autonomous-model benchmark. Every
 workspace mutation goes through the real Coding Tools MCP integration; every
-app interaction goes through Agent Workspace browser/desktop tools. Playwright
+app interaction goes through Agent Computer browser/desktop tools. Playwright
 on the test runner only observes and records the existing public noVNC viewer.
 All inputs are fictional sample data. No third-party actions or live claims.
 """

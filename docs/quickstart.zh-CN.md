@@ -1,8 +1,9 @@
-# 中文上手与 Hackathon 演示
+# Agent Computer 中文上手与演示
 
-这是方案中的“给现有 AI 客户端一台电脑”：模型通过 MCP 操作同一台
-Linux 桌面、Chromium 和工作区，你能看屏、接管、交还。它没有内置大模型
-循环，不会在 ChatGPT/Claude 停止调用后自行持续思考。
+想让 ChatGPT 也像 Muse 那样操作电脑？Agent Computer 通过 MCP，把一台
+Linux 电脑上的桌面、Chromium、终端和文件接入现有 AI 客户端。你能看到
+操作过程，下载结果，也能接管。模型和任务推进由客户端负责；本服务没有
+内置大模型循环，不会在客户端停止调用后自行持续思考。
 
 ## 本地启动
 
@@ -31,9 +32,11 @@ S256 PKCE 和动态客户端注册。连接时会跳转到你的桌面服务，�
 更不要挂载 Docker socket。仓库有 Caddy 示例，但不会替你申请账号、购买算力或
 把 GitHub Actions 当作持续托管服务器。
 
-已经验证的是官方 MCP SDK 的完整协议调用和 Docker 真桌面集成。
-真实 ChatGPT/Claude 账号界面的连接、每个客户端的审批行为，以及你的域名连通性，
-仍需在部署后确认。没有用模拟协议测试冒充真实宿主接入验收。
+已验证官方 MCP SDK 协议调用和 Docker 真桌面集成；项目作者还在
+2026 年 10 月 4 日确认其 ChatGPT 账号已成功连接并调用工具。这是特定账号的
+测试结果，不代表所有账号或平台都支持。ChatGPT 需要自定义 MCP 写入权限，
+请核对 [OpenAI 当前账号要求](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt)。
+Claude 账号接入、各客户端审批行为及你的域名连通性仍需单独确认。
 
 ## 五分钟演示
 

@@ -1,0 +1,98 @@
+标题
+想让 ChatGPT 也像 Muse、Dots 那样操作电脑？我做了个开源项目
+
+正文
+如果你看过 Muse、Grok Bot、Dots，也想让正在用的 ChatGPT 直接操作电脑，可以看看我做的开源项目 Agent Computer。
+
+你自己用 Docker 跑一台 Linux 电脑，通过 MCP + OAuth 接到 ChatGPT。它就能操作浏览器、运行命令、读写文件，你可以在网页里看到执行过程。
+
+比如让它查资料后保存一份带来源的报告，写脚本处理文件，或者做个小网页、打开检查，再按你的要求修改。做出来的文件可以直接下载。
+
+文件、终端和代码编辑用的是我自己的 Coding Tools MCP：
+https://github.com/xyTom/coding-tools-mcp
+
+模型和任务推进还是由 ChatGPT 负责，这个项目提供电脑和工具。需要你的账号支持自定义 MCP 的写入工具；目前是单用户自托管预览版，建议先用公开资料和测试数据试。
+
+项目地址：
+https://github.com/connbot/desktop-bridge
+
+英文 tagline
+Muse-style computer use, inside ChatGPT.
+
+英文仓库简介
+Open-source computer use for ChatGPT: browse, run code, and create files on a self-hosted Linux desktop. Powered by Coding Tools MCP.
+
+
+发布前检查
+
+- 当前发布地址使用现有仓库 https://github.com/connbot/desktop-bridge，安装命令也指向它。以后若迁移或更名，再一起更新仓库链接和安装步骤。
+- 发布前检查登录页、工作台、OAuth 授权页、文档标题是否一致。保留 BRIDGE_* 等内部配置名，避免把宣传改名变成配置迁移。
+- 用自己的真实 ChatGPT 账号重新走一遍 OAuth 连接，在新聊天里选择这个 app，确认能调用浏览器和文件工具。账号必须具备自定义 MCP 写入权限。
+- 按下面脚本录一次真实演示。保留完整原片；剪辑或加速的地方标注清楚。录制失败就修正或重录，不用预制动画代替成功结果。
+- 录屏使用测试数据，不露出 owner token、OAuth code、访问 token、私人聊天、浏览器登录状态或其他账号信息。所有登录与授权过程提前完成，演示从已连接状态开始。
+- 从 README 的步骤检查一遍安装、链接、文件下载和接管。仓库中要带齐 docs、LICENSE、THIRD_PARTY_NOTICES.md、运行文件及改名涉及的文件。
+- 发布时不放临时预览地址当永久体验入口，不宣传无人值守、无限持续运行、普遍支持所有 ChatGPT 账号，或完整复刻 Muse。
+
+30–45 秒真实 ChatGPT 演示分镜
+
+目标：让观众看到“我发出任务 → ChatGPT 用真实电脑执行 → 浏览器里看到结果 → 文件可以拿走”。这是一次真实操作展示，不是成功率测试。
+
+画面准备
+ChatGPT 与桌面观看页并排；字体放大；全新演示目录；没有私人标签页。OAuth 已连接，电脑在可由 AI 操作的状态。先用下面的任务实际跑通，再录制新的同类任务。任务耗时由实际执行决定，不能保证 45 秒内完成；成片可以剪去等待，并标注“中间等待已剪辑”或加速倍数。
+
+0–5 秒
+标题：“想让 ChatGPT 也像 Muse、Dots 那样操作电脑？”下一行：“Agent Computer · 开源”。在 ChatGPT 发送任务，同时露出旁边的真实 Linux 桌面。
+
+5–20 秒
+保留实际工具调用画面和桌面变化。展示 ChatGPT 创建文件，在 Chromium 里打开它；可以剪掉中间等待，不隐藏报错后重试。
+
+20–30 秒
+展示网页里的预算计算结果，以及 ChatGPT 对结果的检查。只写页面并不等于已经检查，镜头要保留真实浏览器验证。
+
+30–38 秒
+给 ChatGPT 追加需求：“增加杂费一栏，设为 10；交通、餐饮、门票分别用 20、40、50，检查总计是否为 120。”展示它修改同一份文件，再用浏览器验证。重点是结果能继续改，而不是一次性生成截图。
+
+38–45 秒
+在 Your files 点 Refresh，下载刚生成的 HTML，打开下载的文件确认能用。结尾：“Agent Computer · Powered by Coding Tools MCP”，附项目地址 https://github.com/connbot/desktop-bridge。
+
+首次任务
+请使用 Agent Computer 的文件和浏览器工具，在工作区创建一个单文件 HTML 的周末预算计算器，包含交通、餐饮、门票三个数字输入框，修改后自动更新总额。先用 20、40、30 作为示例。用终端在工作区启动一个仅在容器内监听的本地静态服务器，再用电脑上的 Chromium 打开页面，检查总额是否为 90；再把门票改成 50，检查总额是否为 110。最后告诉我文件名，让我从工作台下载。全部使用示例数据，不登录外部账号。
+
+追加任务
+请在刚才的文件里增加一个“杂费”输入框，初值为 10。交通、餐饮、门票分别设为 20、40、50。在 Chromium 中重新打开并检查总计是否为 120，然后告诉我更新后的文件名。
+
+录制说明
+结构化浏览器工具使用 HTTP/HTTPS 地址，录制任务因此包含本地静态服务器这一步。只使用容器内本地端口，不将它额外暴露到公网。若安装环境或工具权限阻止这一步，先解决原因，不在发布文案里把尚未完成的演示写成已验证能力。
+
+
+标题备选
+
+1. 想让 ChatGPT 也像 Muse、Dots 那样操作电脑？我做了个开源项目
+2. 看完 Muse、Grok Bot、Dots，也想让 ChatGPT 动手干活？
+3. Muse 式的电脑操作，能不能接到自己的 ChatGPT 上？
+
+推荐用 1。熟悉的产品名直接放在标题和开头，接着用浏览器、命令、文件和真实结果说明具体能力。比较范围是电脑操作，不宣称完整复刻这些产品。
+
+简短英文发布文案
+
+Want ChatGPT to use a computer like Muse or Dots?
+
+If you have been following Muse, Grok Bot, or Dots, here is an open-source project to try: Agent Computer connects ChatGPT to a self-hosted Linux desktop through MCP + OAuth.
+
+Ask ChatGPT to browse, run commands, and create files. It can research a topic and save a report, process files with a script, or build a small web tool, open it, check it, and revise it. You can watch the desktop and download the result.
+
+Files and code execution use my Coding Tools MCP:
+https://github.com/xyTom/coding-tools-mcp
+
+ChatGPT runs the model; this project provides the computer. It's an early, single-owner release for accounts with custom MCP write tools enabled.
+
+Project:
+https://github.com/connbot/desktop-bridge
+
+建议发布顺序
+
+1. 先把改好的 README、界面文案和这份发布文案推送到现有仓库，验证链接、安装步骤和演示。README 首屏用 Muse、Dots 的电脑操作建立认识，再说明 Agent Computer 让 ChatGPT 实际做什么、怎么接上。把实际跑通的环境和账号条件写清楚。
+2. 再录上述一条真实演示，只讲一个完整结果。发布素材保留：45 秒左右视频、最终可下载文件的截图、安装步骤。没有跑通就先不把该结果写成已完成。
+3. 首发到你已有交流和读者的一个技术社区。直接用“想让 ChatGPT 也像 Muse、Dots 那样操作电脑？”作标题，开头提 Muse、Grok Bot、Dots，紧接真实演示和仓库链接。用大家熟悉的产品引起兴趣，用实际结果讲清楚能力。
+4. 再向 Coding Tools MCP 的现有使用者介绍这个新用途：原来的文件和执行工具，加上一台可见的电脑，通过一个 MCP 入口连接。沿用同一段真实演示。
+5. 根据最早几轮反馈补 README。优先处理“我的账号能不能连”“要部署什么”“文件保存在哪里”这类问题；后续演示再换成研究报告或文件处理，逐个展示真实用途。

@@ -31,9 +31,15 @@ class FakeBrowser:
         pass
 
     async def snapshot(self):
-        return {"url": "about:blank", "snapshot": '- button "Test"'}
+        return {**await self.tab_state(), "url": "about:blank", "snapshot": '- button "Test"'}
 
-    async def perform(self, payload):
+    async def tab_state(self):
+        return {"tab_id": "tab-1", "tabs": [
+            {"id": "tab-1", "title": "Test", "url": "about:blank", "active": True}
+        ]}
+
+    async def perform(self, payload, *, observation, guard):
+        guard()
         return {"ok": True}
 
 

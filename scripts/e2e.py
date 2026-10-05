@@ -10,6 +10,7 @@ import base64
 import hashlib
 import io
 import json
+import textwrap
 import uuid
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlsplit
@@ -32,6 +33,36 @@ def unpack(result):
         return json.loads(texts[0])
     except (IndexError, ValueError):
         return {"text": "\n".join(texts)}
+
+
+async def headed_fixture(script):
+    """Test-only external input, without advancing the bridge observation epoch.
+
+    CDP stays on container loopback. Fixed CI credentials guard against using
+    this helper on a personal deployment, even if its container is named bridge.
+    """
+    source = """import asyncio, json, os
+from playwright.async_api import async_playwright
+assert os.environ.get('BRIDGE_OWNER_TOKEN') == 'test-only-owner-token-not-for-deployment-123'
+assert os.environ.get('BRIDGE_PUBLIC_URL') == 'http://127.0.0.1:8080'
+async def run():
+    async with async_playwright() as pw:
+        browser = await pw.chromium.connect_over_cdp('http://127.0.0.1:9222', no_defaults=True)
+        context = browser.contexts[0]
+""" + textwrap.indent(textwrap.dedent(script), "        ") + "\nasyncio.run(run())\n"
+    process = await asyncio.create_subprocess_exec(
+        "docker", "exec", "-i", "bridge", "python", "-",
+        stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        out, err = await asyncio.wait_for(process.communicate(source.encode()), timeout=40)
+    except TimeoutError:
+        process.kill()
+        await process.wait()
+        raise
+    assert process.returncode == 0, (out.decode(), err.decode())
+    return json.loads(out) if out.strip() else None
 
 
 async def authenticate(http):
@@ -162,6 +193,172 @@ async def run(restart):
                     stale = await call("desktop_action", {**action, "action_id": "stale"}, True)
                     assert stale.isError and "STALE_OBSERVATION" in str(stale)
                     results.append("Pixel action, receipt replay and stale observation rejection")
+
+                    # Real tabs in the headed desktop, including external changes
+                    # that do NOT create a new bridge action/observation epoch.
+                    async def tab_snapshot(*, title=None, tab_id=None):
+                        deadline = asyncio.get_running_loop().time() + 10
+                        last = None
+                        while asyncio.get_running_loop().time() < deadline:
+                            value = await call("browser_snapshot", allow_error=True)
+                            last = unpack(value)
+                            if (
+                                not value.isError and last.get("tab_id") is not None
+                                and (title is None or last.get("title") == title)
+                                and (tab_id is None or last.get("tab_id") == tab_id)
+                            ):
+                                active = [tab for tab in last["tabs"] if tab["active"]]
+                                assert len(active) == 1 and active[0]["id"] == last["tab_id"], last
+                                assert active[0]["title"] == last["title"], last
+                                return last
+                            await asyncio.sleep(0.1)
+                        raise AssertionError(("Visible browser tab did not settle", last))
+
+                    await headed_fixture("""
+                        page = context.pages[0]
+                        await page.evaluate('''() => {
+                            document.title = 'Tabs: original';
+                            document.querySelector('#note').value = 'ORIGINAL-PRESERVED';
+                            const link = document.createElement('a');
+                            link.href = '/static/demo.html?tab=popup';
+                            link.target = '_blank'; link.textContent = 'Open popup tab';
+                            document.body.append(link);
+                        }''')
+                        await page.bring_to_front()
+                    """)
+                    original = await tab_snapshot(title="Tabs: original")
+                    original_id, original_url = original["tab_id"], original["url"]
+                    await browser({"kind": "click", "role": "link", "name": "Open popup tab"})
+                    await headed_fixture("""
+                        popup = next(page for page in context.pages if '?tab=popup' in page.url)
+                        await popup.wait_for_load_state('domcontentloaded')
+                        await popup.evaluate("document.title = 'Tabs: popup'; document.querySelector('#note').value = 'POPUP-PRESERVED'")
+                    """)
+                    popup = await tab_snapshot(title="Tabs: popup")
+                    popup_id = popup["tab_id"]
+                    assert popup_id != original_id
+                    _, png = await observe()
+                    (OUT / "tabs-popup-visible.png").write_bytes(png)
+                    await headed_fixture("""
+                        from desktop_bridge.backends import Desktop
+                        await Desktop().perform({'kind': 'key', 'keys': ['ctrl', '1']})
+                    """)
+                    await tab_snapshot(title="Tabs: original", tab_id=original_id)
+                    _, png = await observe()
+                    (OUT / "tabs-human-switched-back.png").write_bytes(png)
+                    results.append("target=_blank popup and human Ctrl+1 switch agree with visible tab/title")
+
+                    await headed_fixture("""
+                        cdp = await browser.new_browser_cdp_session()
+                        async with context.expect_page() as opened:
+                            await cdp.send('Target.createTarget', {
+                                'url': 'http://127.0.0.1:8080/static/demo.html?tab=background',
+                                'background': True,
+                            })
+                        background = await opened.value
+                        await background.wait_for_load_state('domcontentloaded')
+                        await background.evaluate("document.title = 'Tabs: background'")
+                    """)
+                    state = await tab_snapshot(tab_id=original_id)
+                    background_id = next(tab["id"] for tab in state["tabs"] if tab["title"] == "Tabs: background")
+                    await browser({"kind": "select_tab", "tab_id": background_id})
+                    await tab_snapshot(title="Tabs: background", tab_id=background_id)
+                    await headed_fixture("""
+                        await next(page for page in context.pages if '?tab=popup' in page.url).close()
+                    """)
+                    state = await tab_snapshot(tab_id=background_id)
+                    assert {tab["id"] for tab in state["tabs"]} == {original_id, background_id}
+                    await browser({"kind": "select_tab", "tab_id": original_id})
+                    state = await tab_snapshot(tab_id=original_id)
+                    missing = await call("browser_action", {
+                        "action": {"kind": "select_tab", "tab_id": popup_id},
+                        "action_id": str(uuid.uuid4()), "observation_id": state["observation_id"],
+                    }, True)
+                    assert missing.isError and "TAB_NOT_FOUND" in str(missing)
+                    assert (await tab_snapshot())["tab_id"] == original_id
+                    results.append("Background tab does not steal selection; tab IDs survive closing another tab")
+
+                    state = await tab_snapshot(tab_id=original_id)
+                    new_action = {
+                        "action": {"kind": "new_tab", "url": URL + "/static/demo.html?tab=new"},
+                        "action_id": str(uuid.uuid4()), "observation_id": state["observation_id"],
+                    }
+                    created = unpack(await call("browser_action", new_action))
+                    new_id = created["tab_id"]
+                    assert new_id not in {original_id, popup_id, background_id}
+                    assert unpack(await call("browser_action", new_action))["replayed"] is True
+                    await headed_fixture("""
+                        page = next(page for page in context.pages if '?tab=new' in page.url)
+                        await page.evaluate("document.title = 'Tabs: new'; document.querySelector('#note').value = 'NEW-PRESERVED'")
+                        assert len(context.pages) == 3
+                        original = next(page for page in context.pages if '?' not in page.url)
+                        assert await original.locator('#note').input_value() == 'ORIGINAL-PRESERVED'
+                    """)
+                    state = await tab_snapshot(title="Tabs: new", tab_id=new_id)
+                    assert next(tab["url"] for tab in state["tabs"] if tab["id"] == original_id) == original_url
+                    results.append("new_tab preserves old content and receipt replay creates no duplicate tab")
+
+                    for observation_tool in ["browser_snapshot", "desktop_screenshot"]:
+                        await headed_fixture("""
+                            await next(page for page in context.pages if '?' not in page.url).bring_to_front()
+                        """)
+                        await tab_snapshot(tab_id=original_id)
+                        before = unpack(await call(observation_tool))
+                        assert before["tab_id"] == original_id
+                        epoch = unpack(await call("session_status"))["epoch"]
+                        await headed_fixture("""
+                            await next(page for page in context.pages if '?tab=new' in page.url).bring_to_front()
+                        """)
+                        assert unpack(await call("session_status"))["epoch"] == epoch
+                        denied = await call("browser_action", {
+                            "action": {"kind": "fill", "role": "textbox", "name": "Project note", "text": "WRONG-TAB-WRITE"},
+                            "action_id": str(uuid.uuid4()), "observation_id": before["observation_id"],
+                        }, True)
+                        assert denied.isError and "STALE_OBSERVATION" in str(denied), denied
+                    await headed_fixture("""
+                        original = next(page for page in context.pages if '?' not in page.url)
+                        current = next(page for page in context.pages if '?tab=new' in page.url)
+                        assert await original.locator('#note').input_value() == 'ORIGINAL-PRESERVED'
+                        assert await current.locator('#note').input_value() == 'NEW-PRESERVED'
+                        await original.evaluate('''() => {
+                            Object.defineProperty(document, 'visibilityState', {value: 'visible'});
+                            document.hasFocus = () => true;
+                        }''')
+                    """)
+                    await tab_snapshot(title="Tabs: new", tab_id=new_id)
+                    results.append("Snapshot and screenshot tab mismatches reject input despite unchanged epoch; hostile focus spoof ignored")
+
+                    state = await tab_snapshot(tab_id=new_id)
+                    for mode in ["private", "paused"]:
+                        response = await http.post("/api/control/" + mode, headers=headers)
+                        response.raise_for_status()
+                        for payload in [
+                            {"kind": "select_tab", "tab_id": original_id},
+                            {"kind": "new_tab", "url": URL + "/static/demo.html?tab=forbidden"},
+                        ]:
+                            denied = await call("browser_action", {
+                                "action": payload, "observation_id": state["observation_id"],
+                                "action_id": str(uuid.uuid4()),
+                            }, True)
+                            assert denied.isError and "CONTROL_NOT_OWNED" in str(denied)
+                        if mode == "private":
+                            for tool_name in ["browser_snapshot", "desktop_screenshot"]:
+                                hidden = await call(tool_name, allow_error=True)
+                                assert hidden.isError and "PRIVATE_TAKEOVER" in str(hidden)
+                            assert (await call("browser_action", new_action, True)).isError
+                    await http.post("/api/control/agent", headers=headers)
+                    assert unpack(await call("browser_action", new_action))["replayed"] is True
+                    await headed_fixture("""
+                        assert len(context.pages) == 3
+                        original = next(page for page in context.pages if '?' not in page.url)
+                        for page in list(context.pages):
+                            if page != original:
+                                await page.close()
+                        await original.goto('http://127.0.0.1:8080/static/demo.html')
+                        await original.bring_to_front()
+                    """)
+                    await tab_snapshot(title="Agent Computer · Acceptance lab", tab_id=original_id)
+                    results.append("Tab management preserves private/pause control gates and durable replay behavior")
                     await call(
                         "coding_apply_patch",
                         {

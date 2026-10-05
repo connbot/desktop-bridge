@@ -34,8 +34,9 @@ class DesktopAction(BaseModel):
 
 class BrowserAction(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    kind: Literal["navigate", "click", "fill", "press"]
+    kind: Literal["navigate", "click", "fill", "press", "new_tab", "select_tab"]
     url: str = Field(default="", max_length=4000)
+    tab_id: str = Field(default="", max_length=80)
     role: str = Field(default="", max_length=80)
     name: str = Field(default="", max_length=1000)
     text: str = Field(default="", max_length=20000)
@@ -43,10 +44,17 @@ class BrowserAction(BaseModel):
 
     @model_validator(mode="after")
     def validate_action(self):
-        if self.kind == "navigate":
+        if self.kind == "select_tab":
+            import re
+
+            if not re.fullmatch(r"tab-[1-9][0-9]*", self.tab_id):
+                raise ValueError("Use a tab_id from the latest browser snapshot")
+        elif self.tab_id:
+            raise ValueError("tab_id is only supported for select_tab")
+        if self.kind in {"navigate", "new_tab"}:
             u = urlsplit(self.url)
             if u.scheme not in {"http", "https"} or not u.hostname or u.username or u.password:
                 raise ValueError("Use an HTTP(S) URL without embedded credentials")
-        elif not self.role:
+        elif self.kind != "select_tab" and not self.role:
             raise ValueError("Provide an exact accessible role and name")
         return self

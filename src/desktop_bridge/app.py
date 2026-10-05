@@ -171,11 +171,14 @@ class Runtime:
             ),
             tool(
                 "browser_snapshot",
-                "Accessible snapshot of the same headed Chromium visible on the desktop.",
+                "Snapshot of the active headed Chromium tab, with session-local tab_id and live tabs. "
+                "If selection_required is true, use select_tab with a listed id before page actions.",
             ),
             tool(
                 "browser_action",
-                "Prefer structured browser actions to pixels. Use exact accessible role/name from fresh snapshot.",
+                "Use exact accessible role/name from a fresh observation of the active tab. "
+                "navigate stays in that tab; new_tab opens a URL; select_tab brings a listed tab_id to the front. "
+                "Tab changes invalidate page actions based on older observations.",
                 {
                     "action": BrowserAction.model_json_schema(),
                     "observation_id": {"type": "string"},
@@ -234,6 +237,16 @@ class Runtime:
         tools.extend(self.plugins.tools())
         return tools
 
+    async def screenshot_tab_state(self):
+        # A browser failure must not prevent observing/recovering the desktop.
+        # Such a screenshot remains valid for pixels, but cannot authorize a
+        # structured page action against an unidentified tab.
+        try:
+            return await self.browser.tab_state()
+        except BridgeError as error:
+            return {"tab_id": None, "tabs": [], "selection_required": True,
+                    "warning": f"{error.code}: {error}"}
+
     async def call(self, name, args):
         session = self.session
         if name == "session_status":
@@ -255,14 +268,23 @@ class Runtime:
                 if session.mode == "private":
                     raise BridgeError("PRIVATE_TAKEOVER", "Observation paused")
                 epoch = session.epoch
-                value = await (
-                    self.desktop.screenshot()
-                    if name == "desktop_screenshot"
-                    else self.browser.snapshot()
-                )
+                if name == "desktop_screenshot":
+                    before = await self.screenshot_tab_state()
+                    value = await self.desktop.screenshot()
+                    browser_state = await self.screenshot_tab_state()
+                    if before["tab_id"] != browser_state["tab_id"]:
+                        browser_state = {**browser_state, "tab_id": None,
+                                         "selection_required": True,
+                                         "warning": "Browser tab changed during screenshot; take a fresh browser snapshot."}
+                else:
+                    value = await self.browser.snapshot()
+                    browser_state = value
                 if epoch != session.epoch:
                     raise BridgeError("STALE_OBSERVATION", "Control changed while observing; retry")
-                observation = session.observe()
+                observation = session.observe(
+                    browser_tab_id=browser_state["tab_id"],
+                    browser_tab_ids=[tab["id"] for tab in browser_state["tabs"]],
+                )
                 meta = {
                     "observation_id": observation,
                     "timestamp": time.time(),
@@ -272,7 +294,7 @@ class Runtime:
                     "session_id": session.id,
                 }
                 if name == "desktop_screenshot":
-                    return text_result(meta) + [
+                    return text_result({**meta, **browser_state}) + [
                         types.ImageContent(
                             type="image",
                             mimeType="image/png",
@@ -309,14 +331,31 @@ class Runtime:
             return text_result(self.list_artifacts())
         if name in {"desktop_action", "browser_action"}:
             model = DesktopAction if name == "desktop_action" else BrowserAction
-            payload = model.model_validate(args["action"]).model_dump()
+            action = model.model_validate(args["action"])
+            # Keep fingerprints of pre-tab browser actions compatible with
+            # durable receipts created before the tab_id field was introduced.
+            payload = action.model_dump(exclude={"tab_id"} if action.kind != "select_tab" else set())
+            if not isinstance(args.get("observation_id"), str) or not args["observation_id"]:
+                raise BridgeError("STALE_OBSERVATION", "Take a fresh screenshot or browser snapshot")
             async with session.action(
                 args["action_id"], {"tool": name, "action": payload}, args["observation_id"]
             ) as ticket:
                 if "cached" in ticket:
                     return text_result({**ticket["cached"], "replayed": True})
-                backend = self.desktop if name == "desktop_action" else self.browser
-                ticket["result"] = await drain_on_cancel(backend.perform(payload))
+                if name == "browser_action":
+                    epoch = session.epoch
+
+                    def guard():
+                        session.require_agent()
+                        if session.epoch != epoch:
+                            raise BridgeError("STALE_OBSERVATION", "Control changed during browser action")
+
+                    operation = self.browser.perform(
+                        payload, observation=ticket["observation"], guard=guard
+                    )
+                else:
+                    operation = self.desktop.perform(payload)
+                ticket["result"] = await drain_on_cancel(operation)
                 return text_result(ticket["result"])
         if name.startswith("coding_"):
             args = dict(args)

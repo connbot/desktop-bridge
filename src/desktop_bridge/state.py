@@ -13,6 +13,7 @@ import sqlite3
 import time
 import uuid
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,14 @@ class BridgeError(Exception):
     def __init__(self, code: str, message: str):
         self.code = code
         super().__init__(message)
+
+
+@dataclass(frozen=True)
+class Observation:
+    epoch: int
+    at: float
+    browser_tab_id: str | None = None
+    browser_tab_ids: tuple[str, ...] = ()
 
 
 class Session:
@@ -39,7 +48,7 @@ class Session:
         self.epoch = 0
         self.lock = asyncio.Lock()
         self.control_pending = False
-        self.observations: dict[str, tuple[int, float]] = {}
+        self.observations: dict[str, Observation] = {}
         self.observation_ttl = observation_ttl
         self.last_activity = time.monotonic()
         self.events: list[dict[str, Any]] = []
@@ -81,17 +90,19 @@ class Session:
         self.event("control", mode)
         return self.status()
 
-    def observe(self):
+    def observe(self, *, browser_tab_id=None, browser_tab_ids=()):
         if self.mode == "private":
             raise BridgeError("PRIVATE_TAKEOVER", "Observation paused for private human takeover")
         now = time.monotonic()
         self.observations = {
-            k: v for k, v in self.observations.items() if now - v[1] <= self.observation_ttl
+            k: v for k, v in self.observations.items() if now - v.at <= self.observation_ttl
         }
         if len(self.observations) >= 128:
             self.observations.pop(next(iter(self.observations)))
         identifier = str(uuid.uuid4())
-        self.observations[identifier] = (self.epoch, now)
+        self.observations[identifier] = Observation(
+            self.epoch, now, browser_tab_id, tuple(browser_tab_ids)
+        )
         return identifier
 
     def require_agent(self):
@@ -119,12 +130,13 @@ class Session:
                     )
                 yield {"cached": json.loads(row[2])}
                 return
+            observed = None
             if observation_id is not None:
                 observed = self.observations.get(observation_id)
                 if (
                     not observed
-                    or observed[0] != self.epoch
-                    or time.monotonic() - observed[1] > self.observation_ttl
+                    or observed.epoch != self.epoch
+                    or time.monotonic() - observed.at > self.observation_ttl
                 ):
                     raise BridgeError(
                         "STALE_OBSERVATION", "Take a fresh screenshot or browser snapshot"
@@ -134,7 +146,7 @@ class Session:
                 (action_id, fingerprint, time.time()),
             )
             self.db.commit()
-            ticket: dict[str, Any] = {}
+            ticket: dict[str, Any] = {"observation": observed}
             self.last_activity = time.monotonic()
             try:
                 yield ticket

@@ -89,6 +89,9 @@ class Browser:
         self.endpoint = endpoint
         self.pw = None
         self.browser = None
+        self._tabs = {}
+        self._sessions = {}
+        self._next_tab_id = 1
 
     async def connect(self):
         from playwright.async_api import async_playwright
@@ -102,42 +105,181 @@ class Browser:
                 await asyncio.sleep(1)
         raise RuntimeError("Headed Chromium CDP did not become ready")
 
-    async def page(self):
+    def _live_tabs(self):
         if not self.browser or not self.browser.is_connected():
             raise BridgeError(
                 "BROWSER_DISCONNECTED", "Restart desktop service to reconnect Chromium"
             )
-        context = self.browser.contexts[0]
-        return context.pages[0] if context.pages else await context.new_page()
+        pages = [
+            page for context in self.browser.contexts for page in context.pages
+            if not page.is_closed()
+        ]
+        # Include sessions whose target closed while new_cdp_session was awaiting
+        # its reply, after the close callback already removed the tab entry.
+        for page in set(self._tabs.values()) | self._sessions.keys():
+            if page not in pages:
+                self._forget(page)
+        for page in pages:
+            if page not in self._tabs.values():
+                self._tabs[f"tab-{self._next_tab_id}"] = page
+                self._next_tab_id += 1
+                page.once("close", lambda closed=page: self._forget(closed))
+        return list(self._tabs.items())
+
+    def _forget(self, page):
+        self._tabs = {key: value for key, value in self._tabs.items() if value is not page}
+        # Closing a target automatically detaches its CDP sessions.
+        self._sessions.pop(page, None)
+
+    async def _visibility(self, page):
+        session = self._sessions.get(page)
+        if session is None:
+            session = await page.context.new_cdp_session(page)
+            self._sessions[page] = session
+        # Playwright 1.62 enables this override on every attached page. Disable
+        # only focus emulation, preserving download and media defaults. Reapply
+        # after renderer changes or another CDP client's initialization.
+        await session.send("Emulation.setFocusEmulationEnabled", {"enabled": False})
+        frame = (await session.send("Page.getFrameTree"))["frameTree"]["frame"]["id"]
+        world = await session.send(
+            "Page.createIsolatedWorld", {"frameId": frame, "worldName": "desktop-bridge-tabs"}
+        )
+        # A website can overwrite document.hasFocus/visibilityState in its main
+        # world. Read native properties in our isolated world, never page code.
+        result = await session.send("Runtime.evaluate", {
+            "expression": "({visible: document.visibilityState === 'visible', focused: document.hasFocus()})",
+            "contextId": world["executionContextId"],
+            "returnByValue": True,
+        })
+        value = result.get("result", {}).get("value")
+        if (
+            result.get("exceptionDetails") or not isinstance(value, dict)
+            or type(value.get("visible")) is not bool
+            or type(value.get("focused")) is not bool
+        ):
+            raise BridgeError("BROWSER_TAB_UNAVAILABLE", "Cannot read native browser visibility")
+        return value
+
+    async def tab_state(self):
+        """Inventory live tabs without ever selecting one as an observation side effect."""
+        live = self._live_tabs()
+
+        async def inspect(tab_id, page):
+            tab = {"id": tab_id, "title": "", "url": page.url, "active": False}
+            try:
+                async with asyncio.timeout(5):
+                    visibility = await self._visibility(page)
+                    tab["title"] = await page.title()
+                return tab, visibility
+            except Exception:
+                # A navigating, closed, crashed, or unresponsive target must not
+                # make us guess another tab is active. The next observation can retry.
+                return tab, None
+
+        inspected = await asyncio.gather(*(inspect(key, page) for key, page in live))
+        tabs = [tab for tab, _ in inspected]
+        visible = [tab for tab, state in inspected if state and state["visible"]]
+        focused = [tab for tab, state in inspected if state and state["visible"] and state["focused"]]
+        active = None
+        if all(state is not None for _, state in inspected):
+            if len(visible) == 1:
+                active = visible[0]
+            elif len(focused) == 1:
+                active = focused[0]
+        # Detect targets opening/closing while we inspected; do not combine an
+        # old inventory with a newly focused popup or a reused positional index.
+        if live != self._live_tabs():
+            active = None
+        if active is not None:
+            active["active"] = True
+        value = {"tab_id": active["id"] if active else None, "tabs": tabs}
+        if active is None:
+            value["selection_required"] = True
+            value["warning"] = (
+                "Cannot determine one active browser tab. Use select_tab with an id from tabs, "
+                "or bring a browser tab to the foreground and observe again. "
+                "Use new_tab with an HTTP(S) URL if no tab is open."
+            )
+        return value
+
+    async def page(self, expected_tab_id):
+        state = await self.tab_state()
+        if expected_tab_id is None or state["tab_id"] != expected_tab_id:
+            raise BridgeError(
+                "STALE_OBSERVATION", "Active browser tab changed or is ambiguous; take a fresh snapshot"
+            )
+        return self._tabs[expected_tab_id]
 
     async def snapshot(self):
-        page = await self.page()
-        return {
+        state = await self.tab_state()
+        if state["tab_id"] is None:
+            return {**state, "url": "", "title": "", "snapshot": ""}
+        page = self._tabs[state["tab_id"]]
+        value = {
             "url": page.url,
             "title": await page.title(),
             "snapshot": (await page.locator("body").aria_snapshot())[:40000],
         }
+        current = await self.tab_state()
+        if current["tab_id"] != state["tab_id"]:
+            raise BridgeError("STALE_OBSERVATION", "Active browser tab changed while observing; retry")
+        return {**current, **value}
 
-    async def perform(self, action):
-        page = await self.page()
+    async def perform(self, action, *, observation, guard):
         kind = action["kind"]
-        if kind == "navigate":
+        if kind == "select_tab":
+            self._live_tabs()
+            target = action["tab_id"]
+            if target not in self._tabs:
+                raise BridgeError("TAB_NOT_FOUND", "Tab is closed or unknown; take a fresh snapshot")
+            if target not in observation.browser_tab_ids:
+                raise BridgeError("STALE_OBSERVATION", "Tab was not observed; take a fresh snapshot")
+            page = self._tabs[target]
+            guard()
+            await page.bring_to_front()
+        elif kind == "new_tab":
+            self._live_tabs()
+            if observation.browser_tab_id is not None:
+                context = (await self.page(observation.browser_tab_id)).context
+            elif len(self.browser.contexts) == 1:
+                context = self.browser.contexts[0]
+            else:
+                raise BridgeError("AMBIGUOUS_TAB", "Select a tab before opening one in multiple contexts")
+            guard()
+            page = await context.new_page()
+            self._live_tabs()
+            guard()
+            await page.bring_to_front()
+            guard()
             await page.goto(action["url"], wait_until="domcontentloaded", timeout=20000)
         else:
-            locator = page.get_by_role(action["role"], name=action["name"], exact=True)
-            if await locator.count() != 1:
-                raise BridgeError("AMBIGUOUS_TARGET", "Need exactly one matching role/name")
-            if kind == "click":
-                await locator.click(timeout=10000)
-            elif kind == "fill":
-                await locator.fill(action["text"], timeout=10000)
-            elif kind == "press":
-                await locator.press(action["key"], timeout=10000)
-        return {"ok": True, "url": page.url}
+            page = await self.page(observation.browser_tab_id)
+            if kind == "navigate":
+                guard()
+                await page.goto(action["url"], wait_until="domcontentloaded", timeout=20000)
+            else:
+                locator = page.get_by_role(action["role"], name=action["name"], exact=True)
+                if await locator.count() != 1:
+                    raise BridgeError("AMBIGUOUS_TARGET", "Need exactly one matching role/name")
+                await self.page(observation.browser_tab_id)
+                guard()
+                if kind == "click":
+                    await locator.click(timeout=10000)
+                elif kind == "fill":
+                    await locator.fill(action["text"], timeout=10000)
+                elif kind == "press":
+                    await locator.press(action["key"], timeout=10000)
+        # This is the tab acted on, even if the action opened a popup. A fresh
+        # snapshot determines what is visible next; never silently retarget.
+        self._live_tabs()
+        return {"ok": True, "url": page.url,
+                "tab_id": next((key for key, value in self._tabs.items() if value is page), None)}
 
     async def close(self):
         if self.pw:
             await self.pw.stop()
+        self._tabs.clear()
+        self._sessions.clear()
 
 
 class Coding:

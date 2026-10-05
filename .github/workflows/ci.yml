@@ -20,6 +20,8 @@ jobs:
       - run: pip install -c constraints.txt -e '.[test]'
       - run: ruff check .
       - run: pytest -q
+      - name: Viewer asynchronous state regressions
+        run: node --test tests/viewer_state.test.cjs
   desktop-e2e:
     strategy:
       fail-fast: false
@@ -50,6 +52,10 @@ jobs:
       - run: playwright install --with-deps chromium
       - name: Real GUI, browser, coding, OAuth, takeover and viewer tests
         run: python scripts/e2e.py
+      - name: Read-only setup diagnostics against the running desktop
+        env:
+          BRIDGE_OWNER_TOKEN: test-only-owner-token-not-for-deployment-123
+        run: python scripts/doctor.py --running
       - name: Restart and verify persistence
         run: |
           docker restart bridge

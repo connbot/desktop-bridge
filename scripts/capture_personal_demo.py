@@ -237,7 +237,12 @@ async def run(url, out):
                 assert ready, 'Sample HTTP server did not become ready; see server process/probe artifacts'
                 evidence['verified'].append('An actual Coding Tools HTTP probe verified the generated page before browser navigation')
                 await browser({'kind':'navigate','url':'http://127.0.0.1:8765/tools/index.html'})
-                await snapshot_contains('Make room for','Coding Tools MCP','$50')
+                first_snapshot = await snapshot_contains(
+                    'Make room for','Coding Tools MCP','$50','Agent Computer')
+                assert 'Agent Workspace' not in ' '.join(first_snapshot['snapshot'].split()), (
+                    'The rendered sample app still contains the previous brand', first_snapshot)
+                evidence['verified'].append(
+                    'Rendered browser accessibility text uses Agent Computer and contains no previous Agent Workspace brand')
                 # F11 makes the existing headed Chromium fill the real 1280x800 desktop.
                 await desktop({'kind':'key','keys':['F11']})
                 await asyncio.sleep(1)
@@ -289,10 +294,13 @@ async def run(url, out):
                     evidence['capture']['video_crop'] = bounds
                     evidence['capture']['outer_fullscreen'] = False
 
-                    async def chapter(title):
+                    async def chapter(title, frame_probe=None):
                         current = await desktop_bounds()
-                        evidence['chapters'].append({'title':title, 'video_crop':current,
-                            'video_start_seconds':round(time.monotonic()-recording_start,2)})
+                        item = {'title':title, 'video_crop':current,
+                            'video_start_seconds':round(time.monotonic()-recording_start,2)}
+                        if frame_probe is not None:
+                            item['frame_probe'] = frame_probe
+                        evidence['chapters'].append(item)
 
                     await chapter('Interactive weekend planner')
                     await capture(page,'01-weekend-planner')
@@ -349,6 +357,37 @@ async def run(url, out):
                     await page.get_by_role('link',name='everyday/outputs/spending-summary.json',exact=True).wait_for()
                     await page.screenshot(path=str(out / '06-files-and-desktop.png'),full_page=True)
                     await asyncio.sleep(3)
+
+                    # Record the quickstart's small first task with real MCP tools.
+                    # Save note changes the page only; a separate Coding Tools
+                    # write/read and artifact download prove the durable result.
+                    await chapter('Quickstart: browser note and a downloadable file',
+                                  frame_probe=[.2, .1, .8, .75])
+                    await browser({'kind':'navigate','url':url + '/static/demo.html'})
+                    await snapshot_contains('Computer-use acceptance lab','Project note','Waiting for input')
+                    await asyncio.sleep(1.5)
+                    await browser({'kind':'fill','role':'textbox','name':'Project note',
+                                   'text':'Hello from Agent Computer'})
+                    await click('Save note')
+                    await snapshot_contains('Saved: Hello from Agent Computer')
+                    await asyncio.sleep(2)
+                    await coding('coding_apply_patch', {'patch':
+                        '*** Begin Patch\n*** Add File: hello-agent-computer.txt\n'
+                        '+Hello from Agent Computer\n*** End Patch'})
+                    hello_read = await coding('coding_read_file', {'path':'hello-agent-computer.txt'})
+                    assert 'Hello from Agent Computer' in str(hello_read), hello_read
+                    hello_download = await http.get('/api/artifacts/hello-agent-computer.txt')
+                    hello_download.raise_for_status()
+                    assert hello_download.text.strip() == 'Hello from Agent Computer'
+                    await page.get_by_role('button',name='Refresh',exact=True).click()
+                    await page.get_by_role('link',name='hello-agent-computer.txt',exact=True).wait_for()
+                    await capture(page,'07-first-task-verified')
+                    await page.screenshot(path=str(out / '08-first-task-files.png'),full_page=True)
+                    evidence['verified'].append(
+                        'Quickstart first task used the real local acceptance page; browser tools '
+                        'saved Hello from Agent Computer, then Coding Tools wrote and read '
+                        'hello-agent-computer.txt and the real artifact API downloaded matching text')
+                    await asyncio.sleep(3)
                     assert not errors, errors
                     await context.close()
                     saved_video = await video.path()
@@ -372,16 +411,20 @@ async def run(url, out):
                             assert rendered.size == (WIDTH, HEIGHT), rendered.size
                             crop = item.get('video_crop', bounds)
                             x, y, width, height = (crop[key] for key in ('x','y','width','height'))
+                            # The acceptance page is intentionally sparse in its
+                            # lower-right corner. Probe its actual centered form;
+                            # keep the original lower-right test for all app shots.
+                            probe = item.get('frame_probe', [.72, .72, .97, .97])
                             detail = rendered.convert('RGB').crop((
-                                int(x + width * .72), int(y + height * .72),
-                                int(x + width * .97), int(y + height * .97)))
+                                int(x + width * probe[0]), int(y + height * probe[1]),
+                                int(x + width * probe[2]), int(y + height * probe[3])))
                             colors = detail.getcolors(maxcolors=1000000) or []
                             assert len(colors) > 16, (
-                                'Encoded video is missing the lower-right desktop region', frame)
+                                'Encoded video is missing the expected desktop detail', frame)
                         evidence['capture']['verified_video_frames'].append({
                             'file':frame.name, 'at_seconds':round(at,2), 'chapter':item['title']})
                     evidence['verified'].append(
-                        'Encoded video frames at every chapter retain visible detail in the lower-right desktop region')
+                        'Encoded video frames retain visible lower-right detail for all personal-workspace chapters and centered form detail for the quickstart chapter')
                 exports = out / 'exports'
                 for path in ['everyday/tools/index.html','everyday/tools/style.css','everyday/tools/app.js',
                              'everyday/data/sample-spending.csv','everyday/scripts/analyze.py','everyday/scripts/serve.py',
@@ -392,8 +435,11 @@ async def run(url, out):
                     target = exports / path
                     target.parent.mkdir(parents=True,exist_ok=True)
                     target.write_bytes(response.content)
+                (exports / 'hello-agent-computer.txt').write_bytes(hello_download.content)
                 await http.post('/api/control/paused',headers={'X-CSRF-Token':csrf,'Origin':url})
-                evidence['verified'].append('All ten generated files were exported; managed sample web server stopped after capture')
+                evidence['verified'].append(
+                    'All ten personal-workspace files and the quickstart text file were exported; '
+                    'managed sample web server stopped after capture')
     evidence['complete'] = True
     (out / 'evidence.json').write_text(json.dumps(evidence,indent=2)+'\n')
     print(json.dumps({'complete':True,'output':str(out),'verified':evidence['verified']},indent=2))

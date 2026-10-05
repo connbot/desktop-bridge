@@ -8,7 +8,9 @@ Agent Computer is an open-source project that connects ChatGPT to a self-hosted 
 
 File editing, shell commands, and code execution are powered by **[Coding Tools MCP](https://github.com/xyTom/coding-tools-mcp), also built by xyTom**. One MCP connection brings those tools and the browser into the same workspace.
 
-**Self-hosted preview · One trusted owner**
+**Self-hosted preview · One trusted owner · Apache-2.0**
+
+[English quickstart](docs/quickstart.md) · [简体中文上手](docs/quickstart.zh-CN.md) · [Deployment](docs/deployment.md) · [Contributing](CONTRIBUTING.md) · [Roadmap](ROADMAP.md) · [Changelog](CHANGELOG.md)
 
 ## What can you use it for?
 
@@ -34,54 +36,64 @@ Browser automation and desktop control use the same visible Chromium session. Fi
 
 ## Get started
 
-### 1. Start the computer
+**Check your client before deploying.** Computer use needs custom MCP **write**
+tools. OpenAI currently lists full MCP write access for Business, Enterprise and
+Edu; Pro access is read/fetch-only. Account/workspace permissions vary. See
+[OpenAI's current requirements](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt)
+(checked October 5, 2026).
 
-Requires Docker Compose, Python 3, and roughly 3 GB of RAM. Linux x86-64 is the validated target; macOS/Windows Docker Desktop and ARM have not been verified.
+### 1. Start locally
 
-The source currently lives at [connbot/desktop-bridge](https://github.com/connbot/desktop-bridge):
+You need Git, Python 3.11+, a running [Docker installation with Compose](https://docs.docker.com/compose/install/),
+and at least 3 GB available for the container plus host overhead. Linux x86-64 is
+the validated target; macOS/Windows Docker Desktop and ARM are not certified.
 
 ```sh
 git clone https://github.com/connbot/desktop-bridge.git
 cd desktop-bridge
 python3 scripts/setup.py
+python3 scripts/doctor.py
 docker compose up --build -d
-docker compose logs -f desktop
+python3 scripts/doctor.py --running
 ```
 
-Open **http://localhost:8080**. Sign in with `BRIDGE_OWNER_TOKEN` from your local `.env` file. The setup script creates that file and keeps it private.
+The first build downloads Chromium and system packages. If the last check runs
+before startup finishes, wait and rerun it. Open **http://localhost:8080** on the
+Docker host. Sign in with `BRIDGE_OWNER_TOKEN` from your local `.env` file. Keep
+that token out of chats, source control and logs; it is for owner login and OAuth
+approval, not a bearer token to paste into the MCP client.
 
-Keep the token out of chats, source control, and logs. It is for owner login and OAuth approval, not a bearer token to paste into the MCP client.
+### 2. Connect ChatGPT over HTTPS
 
-### 2. Make it reachable from ChatGPT
+ChatGPT cannot directly reach your laptop's `localhost`. Follow the
+[HTTPS deployment walkthrough](docs/deployment.md) to set `BRIDGE_PUBLIC_URL`,
+configure a reverse proxy and check your domain. Keep Docker's port 8080 on
+loopback. Your direct MCP endpoint is `https://YOUR_HOST/mcp`.
 
-The local `/mcp` endpoint is ready for clients that can reach your machine. For the remote ChatGPT connection described here, deploy behind HTTPS on a host you control:
+Create a custom app named **Agent Computer**, select **OAuth** and, if asked,
+**dynamic client registration**. Scan tools, sign in on your computer's domain,
+review the callback and approve access. No static client secret is required.
+Select the app in a regular ChatGPT chat and keep the viewer open beside it.
 
-1. Set `BRIDGE_PUBLIC_URL` in `.env` to the exact public origin, such as `https://computer.example.com`.
-2. Restart the service with `docker compose up -d`.
-3. Reverse-proxy the gateway at `127.0.0.1:8080`, including WebSockets. See the [Caddy example](docs/Caddyfile.example).
+The [step-by-step quickstart](docs/quickstart.md) covers account setup, local vs.
+remote addresses, authorization expiry and troubleshooting. No model API key is
+needed for this direct connection. The server does not include a model subscription.
 
-Keep the container port bound to loopback. Never expose raw VNC or CDP ports, or mount the Docker socket into the container.
+### 3. Get a result you can check
 
-Your MCP URL will be `https://YOUR_HOST/mcp`.
+Start with a small task that needs no external account:
 
-### 3. Add the MCP app in ChatGPT
+> Use Agent Computer to open http://127.0.0.1:8080/static/demo.html in its browser.
+> Fill Project note with “Hello from Agent Computer”, click Save note, and verify
+> the message on the page. Create hello-agent-computer.txt in the workspace with
+> the same sentence and read it back. Do not sign in to any external account.
 
-You need **custom MCP apps with write actions**. OpenAI's guidance, checked October 5, 2026, lists full MCP write access for Business, Enterprise, and Edu; Pro is currently read/fetch only. Verify your account and workspace permissions against [the current instructions](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt) as the rollout changes.
-
-1. Enable developer mode where available, then open **Apps → Create** in the appropriate user or workspace settings.
-2. Name the app **Agent Computer**, enter your HTTPS `/mcp` URL, and select **OAuth**. If asked, use **dynamic client registration**; no static client ID or secret is needed.
-3. Click **Scan Tools**. Complete the computer's owner login, review the client and callback address, and approve access. Finish creating the app after the scan.
-4. Select the app in a ChatGPT chat, keep the desktop viewer open, and try the task below. Confirm actions when prompted.
-
-This setup uses a custom app in chat. ChatGPT's separate agent mode does not currently use custom apps. See the linked OpenAI instructions for current support.
-
-Access grants expire after one hour, with no refresh token in this version. Reauthorize when needed. A server restart also invalidates sessions and grants; if the client retains an old registration, recreate the connection.
-
-### 4. Try a complete task
-
-> Use Agent Computer's browser to find three free things to do in San Francisco this weekend. Check official sources for dates and opening hours. Save a short plan with source links as `weekend-options.md` in the workspace. Read the saved file back to check it, then tell me where to download it.
-
-In the viewer, click **Refresh** under **Your files** to find the output. This exercises the browser, file tools, and a result you can inspect.
+In the viewer, click **Refresh** under **Your files**, download
+`hello-agent-computer.txt`, and open it. You should see the browser interaction,
+the saved file and its verified contents. Then try the
+[build-and-revise tutorial](docs/quickstart.md#next-build-a-small-tool-and-revise-it)
+to create a budget calculator and check it in Chromium. The default `safe` command
+policy may deny shell operations; see the tutorial before attempting that extra step.
 
 ## Stay in control
 
@@ -89,7 +101,7 @@ In the viewer, click **Refresh** under **Your files** to find the output. This e
 - **Take control:** block new AI actions and take keyboard/mouse control after any in-flight action finishes.
 - **Private takeover:** also block model observations and tool access. Inspect the session before entering secrets; unmanaged background processes may still be running.
 - **Hand back to AI:** return control and require a fresh model observation.
-- **Pause AI / Stop:** block new AI actions and terminate tracked managed shell processes. Stop controls the session; it does not shut down Docker or undo external actions.
+- **Pause AI / Stop:** block new AI actions and attempt to terminate tracked managed shell processes. Stop controls the session; it does not shut down Docker or undo external actions.
 - **Disconnect & revoke:** revoke all owner viewer sessions and OAuth grants.
 
 Writes use action receipts to avoid blindly replaying uncertain operations. Takeover cannot undo a submitted form, a completed purchase, or another external side effect. The connected client remains responsible for user approval.
@@ -114,6 +126,8 @@ The desktop works without these features. Both are **off by default**:
 - **[Personal context](docs/context-providers.md):** save selected preferences, goals, task progress, and result references in an explicitly configured local or Postgres-compatible store. The client must read and update them; a saved task does not start itself. Task status is author-reported, and exporting context does not export the linked files.
 - **[External MCP tools](docs/optional-mcp.md):** expose an explicit allowlist of tools from owner-configured remote MCP servers. Accounts, credentials, service compatibility, and permission for consequential actions require separate setup. Included examples do not mean a live service is connected.
 
+The default Coding Tools command policy is `safe`; some shell operations require a deliberate owner policy choice. Do not switch modes just to bypass a denied command. See [command permissions](docs/deployment.md#command-permissions).
+
 Configuration changes require a restart. No model API key is needed for the ChatGPT connection above. Optional third-party services may require their own credentials.
 
 ## Security and current limits
@@ -130,7 +144,9 @@ Use this with one trusted owner and low-sensitivity data. The browser, gateway, 
 
 The [verification record](docs/validation.md) documents Linux x86-64 Docker tests for real browser/desktop control, OAuth, Coding Tools operations, takeover, view-only enforcement, and restart persistence. The owner also reported successful ChatGPT connection and live tool calls on October 4, 2026. These are integration checks and a specific client report, not an autonomous-task benchmark or a guarantee for every account.
 
-[Architecture](docs/architecture.md) · [Chinese setup guide](docs/quickstart.zh-CN.md) · [Optional Fly deployment](docs/fly-deployment.md)
+[Architecture](docs/architecture.md) · [English / 中文 quickstarts](docs/quickstart.md) · [HTTPS deployment](docs/deployment.md) · [Optional Fly deployment](docs/fly-deployment.md)
+
+Need help or want to improve the project? Start with [contributing and support](CONTRIBUTING.md). Report security concerns using [the security guide](SECURITY.md); do not put tokens or private workspace data in public issues.
 
 ### Credits and license
 
@@ -139,7 +155,7 @@ The [verification record](docs/validation.md) documents Linux x86-64 Docker test
 - **Playwright:** structured browser actions in the same Chromium session.
 - **noVNC and x11vnc:** the live desktop viewer and server-enforced view-only channel.
 
-The project's source is [Apache-2.0](LICENSE). Dependencies retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md). This is an independent project with no OpenAI or Cua affiliation.
+The project's source is [Apache-2.0](LICENSE). Dependencies retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md). This is an independent project with no OpenAI, Muse or Cua affiliation. The Muse/dots comparison describes the computer-use experience, not feature parity or endorsement.
 
 Dependencies are pinned where practical, including the reviewed Coding Tools commit identified in `pyproject.toml`. Base images and Debian packages can change, so rebuilds are not claimed to be byte-for-byte identical.
 

@@ -1,6 +1,17 @@
 # Verification record
 
-## Latest verified runtime (before the Agent Computer relaunch)
+## Agent Computer relaunch validation
+
+October 5, 2026, commit [202f5b6](https://github.com/connbot/desktop-bridge/commit/202f5b6449e0bf25be7a08d0eef2e6161457d222):
+
+- [Core CI](https://github.com/connbot/desktop-bridge/actions/runs/37273834854): 285 Python tests passed, four opt-in database tests skipped, and all three real Docker browser/desktop/OAuth/restart jobs passed.
+- [Real TLS PostgreSQL](https://github.com/connbot/desktop-bridge/actions/runs/37273834801): all 289 tests passed.
+- [Fly-target image](https://github.com/connbot/desktop-bridge/actions/runs/37273834826) and [short public HTTPS tunnel smoke](https://github.com/connbot/desktop-bridge/actions/runs/37273834805) passed. The smoke runtime shut down after testing; it is not a live demo link.
+- CI login, desktop, and narrow-screen viewer screenshots were inspected for the new branding and Coding Tools attribution. These are automated integration fixtures, not a new ChatGPT-account task recording.
+
+Later source changes must be checked on their own commit; these results do not certify untested modifications.
+
+## Earlier verified runtime before the relaunch
 
 October 4, 2026, commit [c3ce5ae](https://github.com/connbot/desktop-bridge/commit/c3ce5ae5b886d10b4d347d8e138a42d7cd4e7e8c):
 
@@ -54,12 +65,13 @@ script evaluation. Browser OAuth testing initially stubbed a redirect target;
 we replaced that with a real callback HTTP listener. These failures are retained
 in the public CI history, rather than represented as successful runs.
 
-## Not claimed
+## Limits of the initial run
 
 - No autonomous model task benchmark or 20-task/three-repeat success-rate study.
   The three repetitions are deterministic integration suites.
-- No live ChatGPT/Claude account connector or public HTTPS/tunnel onboarding has
-  been certified. A reachable deployment and the user's account are required.
+- The initial run did not certify a live ChatGPT/Claude account connector or
+  public HTTPS/tunnel onboarding. The later HTTPS smoke and owner-reported ChatGPT
+  result are recorded below; they do not establish compatibility for every account.
 - No native macOS/Windows/ARM host certification, cross-browser mobile matrix,
   exhaustive GUI-action certification, penetration test, or multi-tenant isolation.
 - No hard guarantee against hostile code, prompt injection, detached processes,

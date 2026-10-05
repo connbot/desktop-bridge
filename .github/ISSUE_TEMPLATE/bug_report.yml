@@ -1,0 +1,40 @@
+name: Bug report
+description: Report a reproducible Agent Computer problem.
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not include owner tokens, OAuth codes, cookies, API keys, private files, or full environment dumps. For security-sensitive reports, read SECURITY.md before posting publicly.
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version
+      description: Run git rev-parse --short HEAD in your checkout.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Host OS/CPU, Docker and Compose versions, deployment method, and AI client. Do not paste credentials.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Use public information or fictional data whenever possible.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual result
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized diagnostics
+      description: You may include scripts/doctor.py output. Review all other logs/screenshots for secrets and personal information first.

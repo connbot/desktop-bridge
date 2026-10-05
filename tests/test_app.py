@@ -193,6 +193,30 @@ def test_artifacts_and_traversal(app, tmp_path):
         assert [x["path"] for x in c.get("/api/artifacts").json()["files"]] == ["hello.txt"]
 
 
+def test_owner_files_remain_available_during_private_takeover(app, tmp_path):
+    workspace = tmp_path / "workspace"
+    (workspace / "hello.txt").write_text("hello")
+    (workspace / "personal").mkdir(exist_ok=True)
+    (workspace / "personal" / "context.json").write_text("private context")
+    (tmp_path / "outside.txt").write_text("outside workspace")
+    (workspace / "leak").symlink_to(tmp_path / "outside.txt")
+    with TestClient(app) as c:
+        assert c.get("/api/artifacts").status_code == 401
+        assert c.get("/api/artifacts/hello.txt").status_code == 401
+        headers = login(c)
+        assert c.post("/api/control/private", headers=headers).status_code == 200
+        assert c.get("/api/status").json()["state"] == "PRIVATE"
+        files = c.get("/api/artifacts")
+        assert files.status_code == 200
+        assert files.json() == {"files": [{"path": "hello.txt", "bytes": 5}], "limit": 500}
+        assert c.get("/api/artifacts/hello.txt").content == b"hello"
+        assert c.get("/api/artifacts/leak").status_code == 404
+        assert c.get("/api/status").json()["state"] == "PRIVATE"
+        # The UI listing must not grant model observations or leave private mode.
+        with pytest.raises(BridgeError, match="Observation paused"):
+            c.portal.call(app.state.runtime.call, "artifacts_list", {})
+
+
 @pytest.mark.parametrize(
     "payload",
     [

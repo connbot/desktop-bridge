@@ -123,6 +123,24 @@ class Runtime:
             self.session.control_pending = False
         return self.session.status()
 
+    def list_artifacts(self):
+        """List workspace files; the caller enforces owner or model access."""
+        files = []
+        for p in self.workspace.rglob("*"):
+            if p.relative_to(self.workspace).parts[0] == "personal":
+                continue  # Dedicated authenticated context export excludes lock/temp files.
+            if (
+                p.is_file()
+                and not p.is_symlink()
+                and p.resolve().is_relative_to(self.workspace.resolve())
+            ):
+                files.append(
+                    {"path": str(p.relative_to(self.workspace)), "bytes": p.stat().st_size}
+                )
+            if len(files) == 500:
+                break
+        return {"files": files, "limit": 500}
+
     def tools(self):
         tools = [
             tool(
@@ -288,21 +306,7 @@ class Runtime:
         if name == "artifacts_list":
             if session.mode == "private":
                 raise BridgeError("PRIVATE_TAKEOVER", "Observation paused")
-            files = []
-            for p in self.workspace.rglob("*"):
-                if p.relative_to(self.workspace).parts[0] == "personal":
-                    continue  # Dedicated authenticated context export excludes lock/temp files.
-                if (
-                    p.is_file()
-                    and not p.is_symlink()
-                    and p.resolve().is_relative_to(self.workspace.resolve())
-                ):
-                    files.append(
-                        {"path": str(p.relative_to(self.workspace)), "bytes": p.stat().st_size}
-                    )
-                if len(files) == 500:
-                    break
-            return text_result({"files": files, "limit": 500})
+            return text_result(self.list_artifacts())
         if name in {"desktop_action", "browser_action"}:
             model = DesktopAction if name == "desktop_action" else BrowserAction
             payload = model.model_validate(args["action"]).model_dump()
@@ -599,7 +603,8 @@ def create_app(
     @app.get("/api/artifacts")
     async def artifacts(request: Request):
         ui(request)
-        return json.loads((await runtime.call("artifacts_list", {}))[0].text)
+        # Private takeover blocks model observations, not the owner's own files.
+        return runtime.list_artifacts()
 
     @app.get("/api/artifacts/{path:path}")
     async def download(path: str, request: Request):

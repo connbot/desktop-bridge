@@ -1,5 +1,5 @@
 const $ = (id) => document.getElementById(id);
-let csrf = '', rfb = null, screenKey = '', statusTimer = null, busy = false, currentMode = 'READY', connectionGeneration = 0;
+let csrf = '', rfb = null, screenKey = '', statusTimer = null, busy = false, currentMode = 'READY', connectionGeneration = 0, authGeneration = 0;
 async function api(path, options = {}) {
   const response = await fetch(path, {...options, headers: {'Content-Type':'application/json', 'X-CSRF-Token':csrf, ...options.headers}});
   const data = await response.json().catch(() => ({}));
@@ -8,6 +8,7 @@ async function api(path, options = {}) {
 }
 function error(e) { $('error').textContent = e.message; }
 function loginView() {
+  authGeneration++;
   clearTimeout(statusTimer); connectionGeneration++; rfb?.disconnect(); rfb = null; screenKey = '';
   for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close();
   personalGeneration++; personalData = null; $('profile-details').replaceChildren(); $('personal-task-list').replaceChildren();
@@ -38,10 +39,25 @@ function showEvents(events) {
     t.textContent=new Date(e.time*1000).toLocaleTimeString(); li.append(t,document.createTextNode(`${e.kind}: ${e.detail}`)); return li;
   }));
 }
+function controlNote(state) {
+  if (state.in_flight) {
+    return ['HUMAN', 'PRIVATE', 'PAUSED', 'STOPPED'].includes(state.state)
+      ? 'Waiting for an in-flight action. New AI actions are blocked after takeover. Managed shell processes are being stopped. Detached external effects cannot be undone.'
+      : 'AI is working. You can watch the desktop or request control.';
+  }
+  if (state.state === 'PRIVATE') return 'Private takeover: AI observations and actions are blocked. You control the desktop.';
+  if (state.state === 'HUMAN') return 'You have control. AI writes are blocked until you hand back.';
+  if (state.state === 'AGENT') return 'AI has control. You are watching a server-enforced read-only stream.';
+  if (state.state === 'READY') return 'Ready for your AI client. Start a task in your connected chat.';
+  return 'AI actions are paused. Hand back to AI to resume.';
+}
 async function refresh() {
+  const generation = authGeneration;
   clearTimeout(statusTimer);
   try {
-    const s=await api('/api/status'); csrf=s.csrf;
+    const s=await api('/api/status');
+    if (generation !== authGeneration) return;
+    csrf=s.csrf;
     const pending = new URLSearchParams(location.search).get('authorize');
     if (pending) { const u = new URL(pending,location.origin); if(u.origin===location.origin && u.pathname==='/authorize'){location.replace(u);return;} }
     const entering = $('workspace').hidden;
@@ -49,18 +65,19 @@ async function refresh() {
     currentMode=s.state; $('status').textContent=s.state; $('status').parentElement.dataset.state=s.state;
     $('view-label').textContent=s.state==='PRIVATE' ? 'Private control · AI cannot observe' : s.state==='HUMAN' ? 'You are in control' : 'Read-only viewer';
     for (const button of document.querySelectorAll('[data-mode]')) button.setAttribute('aria-pressed', String(button.dataset.mode.toUpperCase()===s.state)); $('mcp-url').value=s.mcp_url; showEvents(s.events);
-    $('control-note').textContent=s.in_flight ? 'Waiting for an in-flight action. New AI actions are blocked after takeover. Managed shell processes are being stopped. Detached external effects cannot be undone.' : s.state==='PRIVATE' ? 'Private takeover: AI observations and actions are blocked. You control the desktop.' : s.state==='HUMAN' ? 'You have control. AI writes are blocked until you hand back.' : s.state==='AGENT' ? 'AI has control. You are watching a server-enforced read-only stream.' : 'AI actions are paused. Hand back to AI to resume.';
+    $('control-note').textContent=controlNote(s);
     storageName = s.context_store?.provider === 'postgres' ? 'Postgres · Neon-compatible' : s.context_store?.provider === 'local' ? 'Local file' : 'Optional memory';
     loadPersonal().catch(contextUnavailable);
     if (entering) await files();
     if (!s.in_flight) await connectScreen(s.state);
   } catch(e) {
+    if (generation !== authGeneration) return;
     if (/Sign in|Login/.test(e.message)) loginView(); else error(e);
-  } finally { if (!$('workspace').hidden) statusTimer=setTimeout(refresh,2500); }
+  } finally { if (generation === authGeneration && !$('workspace').hidden) statusTimer=setTimeout(refresh,2500); }
 }
 $('login-form').addEventListener('submit', async e=>{
   e.preventDefault(); const submit=e.submitter; if(submit.disabled)return; submit.disabled=true; $('login-error').textContent='';
-  try {const s=await api('/api/login',{method:'POST',body:JSON.stringify({token:$('token').value})}); csrf=s.csrf; $('token').value='';
+  try {const s=await api('/api/login',{method:'POST',body:JSON.stringify({token:$('token').value})}); authGeneration++; csrf=s.csrf; $('token').value='';
     const next=new URLSearchParams(location.search).get('authorize');
     if(next){const u=new URL(next,location.origin);if(u.origin===location.origin && u.pathname==='/authorize'){location.assign(u);return;}}
     await refresh();

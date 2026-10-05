@@ -6,6 +6,7 @@ services:
     environment:
       BRIDGE_OWNER_TOKEN: ${BRIDGE_OWNER_TOKEN:?Run the setup script first}
       BRIDGE_PUBLIC_URL: ${BRIDGE_PUBLIC_URL:-http://localhost:8080}
+      BRIDGE_CODING_PERMISSION_MODE: ${BRIDGE_CODING_PERMISSION_MODE:-safe}
     volumes:
       - desktop-data:/data
     shm_size: 1gb

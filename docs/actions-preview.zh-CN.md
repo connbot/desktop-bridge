@@ -27,7 +27,7 @@ Cloudflare 提供 HTTPS 地址，ChatGPT 通过 OAuth + Streamable HTTP 调用�
    如果 AI 被暂停，点击 **Hand back to AI**；AI 不能自行撤销你的暂停或隐私接管。
 
 ChatGPT 中是否显示创建连接入口取决于账户、工作区权限和当前产品界面。
-按照 [OpenAI 接入文档](https://developers.openai.com/plugins/deploy/connect-chatgpt)
+按照 [OpenAI 接入文档](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt)
 完成连接。协议烟测不等于已经替你完成 ChatGPT 账户内的连接验证。
 
 ## 固定地址：Named Tunnel（可选）

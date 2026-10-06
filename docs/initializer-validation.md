@@ -83,3 +83,30 @@ HTTPS service hosting, optional Cloudflare public-client verification, abuse
 controls, and separately authorized real-account/real-client validation are
 required before a public launch. Source delivery is not authorization to perform
 any of those actions.
+
+## CI follow-up after publication
+
+The initial local limitations above describe the original review environment.
+Subsequent GitHub CI for `1e6a0579487a90af1e068da47e06e54568647e26`
+ran the real Chromium mock journey and produced nine screenshots in
+[run 37542625665](https://github.com/connbot/desktop-bridge/actions/runs/37542625665).
+This validates the browser path with fictional resources, not real provider OAuth
+or a real ChatGPT account.
+
+Review of those images found two mobile issues: the sticky mock banner could
+cover the heading after a step change or reset, and an uncertain dispatch made
+previously completed stages appear unstarted. The follow-up fixes use measured
+banner clearance/reset scroll and retain progress from the recorded failure stage.
+Browser assertions now cover heading geometry, viewport evidence, actual keyboard
+Space/Tab and actual browser Back/Forward preserving the same server operation.
+Wizard Back/Next is recorded separately from browser history. New screenshots
+must be reviewed for the updated commit before calling these fixes visually passed.
+
+A separate existing desktop acceptance run failed when Save was clicked before
+the expected UTF-8 clipboard text appeared. The failure does not establish one
+exclusive root cause. The VNC acknowledgement only establishes that key events
+were sent; the next CDP click can move focus before the application consumes them.
+The harness now types exactly once, then observes the full expected textarea value
+with a five-second bound before clicking Save. It does not fill, retype or repaste,
+and the original final text assertion remains. Permanently lost input still fails.
+The backend and its input semantics were not changed.

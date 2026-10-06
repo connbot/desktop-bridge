@@ -176,8 +176,24 @@ async def run(restart):
                     assert unpack(await call("browser_snapshot"))["title"] == "Agent Computer · Acceptance lab"
                     results.append("Structured Playwright operates visible headed Chromium")
                     await browser({"kind": "click", "role": "textbox", "name": "Project note"})
-                    await gui({"kind": "type", "text": "你好，Agent Computer!\nUTF-8 ✓"})
+                    typed_note = "你好，Agent Computer!\nUTF-8 ✓"
+                    await gui({"kind": "type", "text": typed_note})
+                    # A VNC key-event ACK does not mean Chromium has consumed the
+                    # clipboard. Observe the exact value before another protocol
+                    # moves focus to Save. Never retry the type or fill the field.
+                    await headed_fixture(f"""
+                        from playwright.async_api import expect
+                        pages = [page for page in context.pages if page.url == {URL + "/static/demo.html"!r}]
+                        assert len(pages) == 1
+                        await expect(pages[0].get_by_role('textbox', name='Project note', exact=True)).to_have_value({typed_note!r}, timeout=5000)
+                    """)
                     await browser({"kind": "click", "role": "button", "name": "Save note"})
+                    saved_note = await headed_fixture(f"""
+                        pages = [page for page in context.pages if page.url == {URL + "/static/demo.html"!r}]
+                        assert len(pages) == 1
+                        print(json.dumps(await pages[0].get_by_role('status').text_content()))
+                    """)
+                    assert saved_note == "Saved: " + typed_note, saved_note
                     snap = unpack(await call("browser_snapshot"))
                     assert "你好，Agent Computer!" in snap["snapshot"], snap
                     results.append("Real Cua keyboard paste handles Chinese, newline and symbols")

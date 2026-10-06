@@ -33,7 +33,7 @@ async function load() {
   w.TextEncoder=class {encode(value){return new w.Uint8Array(new TextEncoder().encode(value));}};w.TextDecoder=TextDecoder;w.Blob=Blob;w.fetch=request;
   w.URL.createObjectURL=blob=>{const url='blob:fixture/'+blobs.size;blobs.set(url,blob);return url;};w.URL.revokeObjectURL=()=>{};
   w.HTMLAnchorElement.prototype.click=function(){if(this.download)downloads.push({name:this.download,blob:blobs.get(this.href)});};
-  w.Element.prototype.scrollIntoView=function(){};w.confirm=()=>true;w.open=()=>{};
+  w.Element.prototype.scrollIntoView=function(){};w.scrollTo=function(){};w.confirm=()=>true;w.open=()=>{};
   Object.defineProperty(w.navigator,'clipboard',{value:{writeText:async text=>{w.testCopied=text;}}});
   for(const [k,v] of Object.entries(storage))w.sessionStorage.setItem(k,v);
   w.addEventListener('error',e=>errors.push(String(e.error)));
@@ -77,6 +77,8 @@ async function main(){
   await passwordStep();await api('/api/mock/scenario',{scenario:'dispatch_unknown'});click('create-start');
   await wait(()=>$('progress-title').textContent==='还不能确认这一步的结果','uncertain dispatch');
   assert($('retry-step').hidden);assert($('restart-preview').hidden);
+  assert.equal(dom.window.document.querySelectorAll('[data-phase].done').length,3);
+  assert(dom.window.document.querySelector('[data-phase="launch"]').classList.contains('attention'));
   inspect=await api('/api/mock/inspect',{});click('check-status');await sleep(100);
   assert.deepEqual((await api('/api/mock/inspect',{})).calls,inspect.calls,'unknown does not repeat writes');
   // A known preflight failure can be retried only after the user explicitly clicks.

@@ -58,7 +58,8 @@ jobs:
           exit 1
       - name: Install test client
         run: pip install 'httpx==0.28.1' 'mcp==1.29.0' 'playwright==1.62.0' 'Pillow==12.2.0'
-      - run: playwright install --with-deps chromium
+      - id: chromium
+        run: playwright install --with-deps chromium
       - name: Real GUI, browser, coding, OAuth, takeover and viewer tests
         run: python scripts/e2e.py
       - name: Read-only setup diagnostics against the running desktop
@@ -74,7 +75,7 @@ jobs:
           done
           python scripts/e2e.py --restart-check
       - name: Initializer real-browser mock journey and screenshots
-        if: matrix.attempt == 1
+        if: ${{ !cancelled() && matrix.attempt == 1 && steps.chromium.outcome == 'success' }}
         run: |
           pip install -c constraints.txt -r requirements-initializer.txt
           python tests/initializer_browser.py --output artifacts/initializer-ui

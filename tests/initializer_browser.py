@@ -91,9 +91,14 @@ def main():
                 expect(page.locator('[data-view="0"]')).to_be_visible()
                 expect(page.locator("#begin")).to_be_disabled()
                 page.screenshot(path=out / "01-welcome-desktop.png", full_page=True)
-                page.locator("#chatgpt-ok").check()
+                page.locator("#chatgpt-ok").focus()
+                page.keyboard.press("Space")
+                expect(page.locator("#chatgpt-ok")).to_be_checked()
+                page.keyboard.press("Tab")
+                expect(page.locator("summary").filter(has_text="找不到入口")).to_be_focused()
                 page.locator("#temporary-ok").check()
                 page.locator("#begin").click()
+                expect(page.locator('[data-view="1"] h2')).to_be_focused()
                 page.locator("#github-connect").click()
                 expect(page.locator("#github-status")).to_contain_text("preview-user")
                 page.screenshot(path=out / "02-accounts-desktop.png", full_page=True)
@@ -108,7 +113,7 @@ def main():
                 page.locator("#password-saved").check()
                 page.locator("#launch-consent").check()
                 page.screenshot(path=out / "03-password-desktop.png", full_page=True)
-                # Back and forward must retain the same password and require explicit consent.
+                # Wizard Back/Next retains the same password; browser history is tested below.
                 page.locator('[data-view="2"] [data-back="1"]').click()
                 page.locator("#accounts-next").click()
                 page.locator("#create-start").dblclick()
@@ -117,6 +122,23 @@ def main():
                     "https://fictional-preview.trycloudflare.com/mcp"
                 )
                 page.screenshot(path=out / "04-ready-desktop.png", full_page=True)
+                operation_id = page.evaluate(
+                    "async () => (await (await fetch('/api/session')).json()).operation.id"
+                )
+                page.goto(origin + "/?history-check=1")
+                expect(page.locator('[data-view="4"]')).to_be_visible()
+                with page.expect_response(lambda response: response.url == origin + "/api/session"):
+                    page.go_back()
+                expect(page.locator('[data-view="4"]')).to_be_visible()
+                with page.expect_response(lambda response: response.url == origin + "/api/session"):
+                    page.go_forward()
+                expect(page.locator('[data-view="4"]')).to_be_visible()
+                assert (
+                    page.evaluate(
+                        "async () => (await (await fetch('/api/session')).json()).operation.id"
+                    )
+                    == operation_id
+                )
                 page.reload()
                 expect(page.locator('[data-view="4"]')).to_be_visible()
                 page.set_viewport_size({"width": 390, "height": 844})
@@ -125,10 +147,22 @@ def main():
                 page.on("dialog", lambda dialog: dialog.accept())
                 page.locator("#stop-preview").click()
                 expect(page.locator("#progress-title")).to_have_text("这次预览已结束", timeout=8000)
+                page.wait_for_function("""() => {
+                    const title=document.querySelector('#progress-title').getBoundingClientRect();
+                    const banner=document.querySelector('#mode-banner').getBoundingClientRect();
+                    return title.top >= banner.bottom+12 && title.bottom < innerHeight;
+                }""")
+                page.screenshot(path=out / "06-ended-mobile-viewport.png")
                 page.screenshot(path=out / "06-ended-mobile.png", full_page=True)
                 # Reset only exists in loopback mock; same account, no external mutations.
                 page.locator("#reset-mock").click()
                 expect(page.locator('[data-view="0"]')).to_be_visible()
+                page.wait_for_function("""() => {
+                    const banner=document.querySelector('#mode-banner');
+                    const title=document.querySelector('[data-view="0"] h2').getBoundingClientRect();
+                    return !banner.hidden && scrollY===0 && title.top >= banner.getBoundingClientRect().bottom+12 && title.bottom < innerHeight;
+                }""")
+                page.screenshot(path=out / "07-welcome-mobile-viewport.png")
                 page.screenshot(path=out / "07-welcome-mobile.png", full_page=True)
                 page.evaluate("""async () => {const s=await (await fetch('/api/session')).json();
                     await fetch('/api/mock/scenario',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':s.csrf},body:JSON.stringify({scenario:'no_zones'})});} """)
@@ -159,6 +193,13 @@ def main():
                 expect(page.locator("#progress-title")).to_have_text(
                     "还不能确认这一步的结果", timeout=12000
                 )
+                expect(page.locator("[data-phase].done")).to_have_count(3)
+                expect(page.locator('[data-phase="launch"]')).to_have_class("attention")
+                expect(page.locator('[data-phase="launch"] strong')).to_contain_text("待核对")
+                page.wait_for_function(
+                    """() => document.querySelector('#progress-title').getBoundingClientRect().top >= document.querySelector('#mode-banner').getBoundingClientRect().bottom+12"""
+                )
+                page.screenshot(path=out / "09-unknown-mobile-viewport.png")
                 page.screenshot(path=out / "09-unknown-mobile.png", full_page=True)
                 assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
                 assert not errors, errors
@@ -175,7 +216,11 @@ def main():
                                 "quick end-to-end",
                                 "download and confirm",
                                 "browser sealed-box",
-                                "back/forward",
+                                "wizard Back/Next",
+                                "browser Back/Forward retains operation",
+                                "keyboard Space/Tab and heading focus",
+                                "mobile sticky banner clearance and reset scroll",
+                                "unknown dispatch preserves completed stages",
                                 "double click",
                                 "ready refresh",
                                 "stop terminal",

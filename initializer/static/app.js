@@ -20,7 +20,11 @@
     if (focus) {
       const heading=document.querySelector(`[data-view="${next}"] h2`);
       heading?.focus({preventScroll:true});
-      if (window.innerWidth < 860) heading?.scrollIntoView({block:'start',behavior:'instant'});
+      if (window.innerWidth < 860 && heading) {
+        const banner=$('mode-banner');
+        const clearance=(banner.hidden ? 0 : banner.getBoundingClientRect().height)+16;
+        window.scrollTo({top:Math.max(0,window.scrollY+heading.getBoundingClientRect().top-clearance),behavior:'instant'});
+      }
     }
     if (next === 2) { ensurePassword(); renderSummary(); }
   }
@@ -126,10 +130,17 @@
     $('stop-pending').hidden=!op.run_id || terminal.has(op.stage) || ['stopping','ending'].includes(op.stage);
     if (op.stage === 'ready') { renderReady(); if (step !== 4) show(4); return; }
     if (step === 4) show(3);
-    const n = phaseFor[op.stage] ?? -1;
+    const n = op.stage==='ended' && !op.last_seen ? 4 : (phaseFor[op.stage] ?? phaseFor[op.failed_stage] ?? -1);
+    const needsAttention=['unknown','failed','interrupted'].includes(op.stage);
     document.querySelectorAll('[data-phase]').forEach(el=>{
-      const index = phaseOrder.indexOf(el.dataset.phase); el.classList.toggle('done',index<n); el.classList.toggle('active',index===n);
-      el.querySelector('span').textContent=index<n?'✓':'';
+      const index=phaseOrder.indexOf(el.dataset.phase);
+      el.classList.toggle('done',index<n);
+      el.classList.toggle('active',index===n && !needsAttention && op.stage!=='ended');
+      el.classList.toggle('attention',index===n && needsAttention);
+      el.querySelector('span').textContent=index<n?'✓':(index===n && needsAttention?'?':'');
+      const title=el.querySelector('strong');
+      title.dataset.label ||= title.textContent;
+      title.textContent=op.stage==='unknown' && index===n ? title.dataset.label+'（待核对）' : title.dataset.label;
     });
     if (!terminal.has(op.stage) && !op.error) { $('progress-title').textContent='让配置自己完成'; $('progress-description').textContent='保持这个页面打开。当前进度来自服务端，完成检查后会显示连接地址。'; }
     const bad = terminal.has(op.stage) || Boolean(op.error);
@@ -200,7 +211,7 @@
       $('reauthorize').hidden=!['session_expired','authorization_expired'].includes(e.code);
     } finally { polling=false; }
   }
-  $('reset-mock').onclick=safeAction(async()=>{await api('/api/mock/reset',{});sessionStorage.clear();window.location.reload();});
+  $('reset-mock').onclick=safeAction(async()=>{await api('/api/mock/reset',{});sessionStorage.clear();sessionStorage.setItem('bridge-reset-scroll','1');window.scrollTo({top:0,behavior:'instant'});window.location.reload();});
   $('chatgpt-ok').addEventListener('change',updateButtons); $('temporary-ok').addEventListener('change',updateButtons);
   $('begin').onclick=()=>{sessionStorage.setItem('bridge-prerequisites','confirmed');show(1);};
   document.querySelectorAll('[data-back]').forEach(el=>el.onclick=()=>show(Number(el.dataset.back)));
@@ -251,9 +262,12 @@
       if(choice==='named')document.querySelector('[value="named"]').checked=true;
       const pre=sessionStorage.getItem('bridge-prerequisites')==='confirmed';
       $('chatgpt-ok').checked=pre;$('temporary-ok').checked=pre;
+      const resetScroll=sessionStorage.getItem('bridge-reset-scroll')==='1';
+      sessionStorage.removeItem('bridge-reset-scroll');
       renderAccounts();message('global-notice',session.notice);op=session.operation;
       if(op){show(op.stage==='ready'?4:3,false);renderOperation();if(!terminal.has(op.stage))schedulePoll(300);}
       else show(session.user||pre?1:0,false);
+      if(resetScroll) requestAnimationFrame(()=>window.scrollTo({top:0,behavior:'instant'}));
     }catch(e){message('global-error',e.message);}
   })();
 })();

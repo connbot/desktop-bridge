@@ -73,6 +73,11 @@ jobs:
             sleep 2
           done
           python scripts/e2e.py --restart-check
+      - name: Initializer real-browser mock journey and screenshots
+        if: matrix.attempt == 1
+        run: |
+          pip install -c constraints.txt -r requirements-initializer.txt
+          python tests/initializer_browser.py --output artifacts/initializer-ui
       - name: Collect logs
         if: always()
         run: mkdir -p artifacts && docker logs bridge > artifacts/container.log 2>&1 || true

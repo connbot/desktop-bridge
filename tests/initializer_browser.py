@@ -31,6 +31,7 @@ def main():
         port = sock.getsockname()[1]
     origin = f"http://127.0.0.1:{port}"
     with tempfile.TemporaryDirectory() as tmp:
+        password_path = Path(tmp) / "test-password.json"
         env = {
             **os.environ,
             "INITIALIZER_MODE": "mock",
@@ -101,8 +102,8 @@ def main():
                 with page.expect_download() as info:
                     page.locator("#download-password").click()
                 download = info.value
-                download.save_as(str(out / "test-password.json"))
-                recovery = json.loads((out / "test-password.json").read_text())
+                download.save_as(str(password_path))
+                recovery = json.loads(password_path.read_text())
                 assert len(recovery["owner_password"]) == 43
                 page.locator("#password-saved").check()
                 page.locator("#launch-consent").check()
@@ -148,7 +149,7 @@ def main():
                 expect(page.locator('[data-view="1"]')).to_be_visible()
                 page.locator("#accounts-next").click()
                 page.locator("summary").filter(has_text="已经下载过").click()
-                page.locator("#restore-password").set_input_files(str(out / "test-password.json"))
+                page.locator("#restore-password").set_input_files(str(password_path))
                 expect(page.locator("#download-status")).to_contain_text("没有上传")
                 page.locator("#password-saved").check()
                 page.locator("#launch-consent").check()
@@ -162,7 +163,7 @@ def main():
                 assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
                 assert not errors, errors
                 # Never retain even test passwords in review artifacts.
-                (out / "test-password.json").unlink()
+                password_path.unlink()
                 context.close()
                 browser.close()
                 (out / "result.json").write_text(

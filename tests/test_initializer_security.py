@@ -7,11 +7,13 @@ fresh, fictional, and never persisted. No account, tunnel, or workflow is used.
 import asyncio
 import base64
 import importlib
+import importlib.util
 import json
 import os
 import socket
 import time
 from contextlib import aclosing
+from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
@@ -844,7 +846,12 @@ async def test_named_launch_refuses_changed_binding_before_secret_or_dispatch():
 
 
 def test_runner_report_has_only_oidc_and_nonsecret_readiness(capsys):
-    from scripts.initializer_events import report
+    spec = importlib.util.spec_from_file_location(
+        "initializer_events", Path(__file__).parents[1] / "scripts/initializer_events.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    report = module.report
 
     requests = []
     env = {

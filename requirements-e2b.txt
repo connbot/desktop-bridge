@@ -1,0 +1,3 @@
+# Host-side launcher only. No desktop runtime, browser download or Docker required.
+e2b==2.52.1
+httpx==0.28.1

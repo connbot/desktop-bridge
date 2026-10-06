@@ -42,6 +42,8 @@ Edu; Pro access is read/fetch-only. Account/workspace permissions vary. See
 [OpenAI's current requirements](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt)
 (checked October 5, 2026).
 
+Want a cloud desktop without your own server? The optional [E2B integration](docs/e2b-deployment.md) provides a create/resume launcher and native HTTPS. It needs a prebuilt, validated template; no public template is claimed yet. [中文说明](docs/e2b-deployment.zh-CN.md).
+
 ### 1. Start locally
 
 You need Git, Python 3.11+, a running [Docker installation with Compose](https://docs.docker.com/compose/install/),

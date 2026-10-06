@@ -114,3 +114,6 @@ yarl==1.25.1
 zope.interface==8.6
 psycopg==3.3.6
 psycopg-binary==3.3.6
+
+# Optional E2B launcher SDK; never installed in the desktop image.
+e2b==2.52.1

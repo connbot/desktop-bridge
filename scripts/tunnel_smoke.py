@@ -9,7 +9,7 @@ import httpx
 from websockets.sync.client import connect
 
 
-def smoke(base, owner):
+def smoke(base, owner, *, action_id="public-tunnel-smoke"):
     with httpx.Client(base_url=base, timeout=45, follow_redirects=False) as http:
         denied = http.post("/mcp", json={})
         assert denied.status_code == 401
@@ -77,7 +77,7 @@ def smoke(base, owner):
         assert any(item["type"] == "image" for item in shot["content"])
         assert not rpc("tools/call", {"name": "browser_snapshot", "arguments": {}}).get("isError")
         command = rpc("tools/call", {"name": "coding_exec_command", "arguments": {
-            "cmd": "printf tunnel-ready", "yield_time_ms": 1000, "bridge_action_id": "public-tunnel-smoke",
+            "cmd": "printf tunnel-ready", "yield_time_ms": 1000, "bridge_action_id": action_id,
         }})
         assert not command.get("isError") and "tunnel-ready" in str(command)
         cookie = "; ".join(f"{k}={v}" for k, v in http.cookies.items())

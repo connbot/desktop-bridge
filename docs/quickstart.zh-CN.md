@@ -1,5 +1,7 @@
 # Agent Computer 中文上手
 
+如果不想自备服务器，可参考可选的 [E2B 上手说明](e2b-deployment.zh-CN.md)。需要先有经过构建和验证的模板，下面的本地 Docker 操作仍然适用。
+
 [English](quickstart.md) · [简体中文](quickstart.zh-CN.md) · [项目介绍](../README.md)
 
 **想让 ChatGPT 也像 Muse、Dots 那样操作电脑？** Agent Computer 把你自托管的

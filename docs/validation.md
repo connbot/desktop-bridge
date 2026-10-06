@@ -93,3 +93,12 @@ The owner subsequently confirmed successful ChatGPT connection and live tool
 calls. This is owner-reported client validation, not an autonomous task-success
 benchmark. Personal task examples remain examples until their actual outputs
 and execution evidence are demonstrated.
+
+## Optional E2B route
+
+`e2b-image.yml` builds and inspects the cold Docker target only. Offline launcher
+tests mock provider calls and do not execute a firewall. The separate manually
+dispatched `e2b-live.yml` needs an approved existing template and user-configured
+key; it checks native ingress and memory pause/resume on a disposable sandbox.
+No E2B cloud call runs on push/PR. See [E2B verification](e2b-deployment.md#verification-before-sharing-a-template)
+for the remaining real-provider and real-client acceptance boundaries.

@@ -1,5 +1,7 @@
 # Your first task with Agent Computer
 
+For a cloud computer without running your own server, see the optional [E2B quickstart](e2b-deployment.md). It needs a prebuilt, validated template; the local Docker instructions below remain unchanged.
+
 [English](quickstart.md) · [简体中文](quickstart.zh-CN.md) · [Project overview](../README.md)
 
 This guide gets you from a fresh checkout to a file you can download. Agent

@@ -14,6 +14,7 @@ dependencies = [
   "python-multipart==0.0.22",
 ]
 [project.optional-dependencies]
+e2b = ["e2b==2.52.1"]
 postgres = ["psycopg[binary]==3.3.6"]
 desktop = ["cua-computer-server[vnc]==0.3.46", "coding-tools-mcp @ https://github.com/connbot/coding-tools-mcp/archive/a2b802171bee1f990effa55f955efa2eddde4c59.tar.gz"]
 test = ["pytest==9.0.2", "pytest-asyncio==1.3.0", "ruff==0.15.7"]

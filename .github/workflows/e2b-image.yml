@@ -1,0 +1,30 @@
+name: Build cold E2B image (no provider access)
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Build without publishing or credentials
+        run: docker build --target e2b -t desktop-bridge:e2b-test .
+      - name: Verify cold-image bootstrap and firewall executables exist
+        run: |
+          docker run --rm --entrypoint /bin/sh desktop-bridge:e2b-test -ec '
+            test -x /usr/bin/python3
+            test -x /usr/bin/setpriv
+            test -x /usr/sbin/iptables-legacy
+            test -x /usr/sbin/ip6tables-legacy
+            test -f /opt/agent-computer/e2b-entrypoint.py
+            test -f /opt/agent-computer/fly-entrypoint.py
+            test ! -e /run/agent-computer-e2b-secured
+            test ! -e /data/profile/Default
+            test -z "$BRIDGE_OWNER_TOKEN"
+            test -z "$E2B_API_KEY"
+          '
+      # No firewall execution, E2B template build, registry push or sandbox create.

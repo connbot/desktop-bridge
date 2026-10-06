@@ -11,6 +11,8 @@ their implementation as original work.
 - Coding Tools MCP, exact reviewed commit a2b802171bee1f990effa55f955efa2eddde4c59
   (pre-release fixes based on 0.5.0), Apache-2.0, xyTom and contributors:
   https://github.com/xyTom/coding-tools-mcp
+- E2B Python SDK 2.52.1 (optional host-side launcher), Apache-2.0:
+  https://github.com/e2b-dev/E2B
 - Playwright, Apache-2.0: https://github.com/microsoft/playwright
 - MCP Python SDK, MIT: https://github.com/modelcontextprotocol/python-sdk
 - noVNC, mainly MPL-2.0; its license document describes bundled portions:

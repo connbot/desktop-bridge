@@ -40,5 +40,15 @@ COPY docker/fly-entrypoint.py /usr/local/bin/fly-entrypoint.py
 ENTRYPOINT ["/usr/bin/tini", "--", "python3", "/usr/local/bin/fly-entrypoint.py"]
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
 
+# Cold E2B image. Its Docker CMD/ENTRYPOINT are not used by the E2B template.
+# Per-user initialization only happens through the launcher after Sandbox.create.
+FROM fly AS e2b
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends iptables util-linux \
+    && rm -rf /var/lib/apt/lists/*
+COPY docker/e2b-entrypoint.py docker/fly-entrypoint.py /opt/agent-computer/
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["sleep", "infinity"]
+
 # Preserve the original non-root behavior for docker build / Compose by default.
 FROM desktop AS local

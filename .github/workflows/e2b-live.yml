@@ -1,0 +1,63 @@
+name: Validate an approved E2B template (manual only)
+on:
+  workflow_dispatch:
+    inputs:
+      template:
+        description: Existing approved cold Agent Computer E2B template ID
+        required: true
+        type: string
+      approve_disposable_test:
+        description: Approve one 2-CPU/4-GiB test sandbox, guest firewall rules, and deletion of its test data
+        required: true
+        default: false
+        type: boolean
+permissions:
+  contents: read
+jobs:
+  live:
+    if: inputs.approve_disposable_test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: e2b-live-validation
+    env:
+      E2B_TEMPLATE: ${{ inputs.template }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Install host-side client
+        run: pip install -r requirements-e2b.txt 'websockets==17.2'
+      - name: Create only one disposable sandbox
+        env:
+          E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
+        run: python scripts/e2b_sandbox.py --state "$RUNNER_TEMP/e2b-state.json" create --template "$E2B_TEMPLATE" --timeout 600
+      - name: Test public ingress, OAuth, desktop and memory resume
+        env:
+          E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
+        run: python scripts/e2b_acceptance.py --state "$RUNNER_TEMP/e2b-state.json" --run-live --timeout 600
+      - name: Delete this job's disposable sandbox, including after failure
+        env:
+          E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
+        if: always()
+        shell: bash
+        run: |
+          if test -f "$RUNNER_TEMP/e2b-state.json"; then
+            python - <<'PY'
+          import json, os
+          from pathlib import Path
+          from e2b import Sandbox
+          path = Path(os.environ['RUNNER_TEMP']) / 'e2b-state.json'
+          state = json.loads(path.read_text())
+          sandbox_id = state.get('sandbox_id')
+          if sandbox_id:
+              try:
+                  Sandbox.kill(sandbox_id)
+              except Exception as error:
+                  raise SystemExit(f'Cleanup failed ({type(error).__name__}); inspect E2B manually.') from None
+              path.unlink()
+              print('Deleted only this run\'s disposable test sandbox.')
+          else:
+              raise SystemExit('Allocation outcome unknown. Inspect E2B manually; no unrelated sandbox was deleted.')
+          PY
+      # Never upload launcher state, logs with envs, browser profiles or cookies.

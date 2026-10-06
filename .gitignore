@@ -14,3 +14,6 @@ dist/
 fly.toml
 
 config/plugins.json
+
+# Private E2B launcher state (default lives outside this checkout).
+e2b-state*.json

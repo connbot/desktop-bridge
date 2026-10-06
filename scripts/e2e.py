@@ -178,7 +178,7 @@ async def run(restart):
                     await browser({"kind": "click", "role": "textbox", "name": "Project note"})
                     typed_note = "你好，Agent Computer!\nUTF-8 ✓"
                     await gui({"kind": "type", "text": typed_note})
-                    # A VNC key-event ACK does not mean Chromium has consumed the
+                    # VNC key-event submission does not mean Chromium has consumed the
                     # clipboard. Observe the exact value before another protocol
                     # moves focus to Save. Never retry the type or fill the field.
                     await headed_fixture(f"""
@@ -550,28 +550,116 @@ async def run(restart):
                         await browser({"kind": "click", "role": "textbox", "name": "Project note"})
 
                         async def inject(channel):
-                            await page.evaluate(
-                                """async (channel) => {
-                              const {default:RFB}=await import('/novnc/core/rfb.js');
-                              const node=document.createElement('div');document.body.append(node);
-                              await new Promise((resolve,reject)=>{
-                                const r=new RFB(node,`ws://${location.host}/desktop/${channel}`);
-                                r.viewOnly=false;
-                                const timer=setTimeout(()=>{r.disconnect();reject(new Error('VNC handshake timeout'));},5000);
-                                r.addEventListener('connect',()=>{
-                                  r.sendKey(0x7a,'KeyZ');
-                                  setTimeout(()=>{clearTimeout(timer);r.disconnect();node.remove();resolve();},300);
-                                });
-                              });
-                            }""",
-                                channel,
-                            )
+                            # Keep the probe alive until application-level evidence,
+                            # not a fixed disconnect delay. Exactly one key is sent.
+                            assert channel in {"view", "control"}
+                            try:
+                                await page.evaluate(
+                                    """async (channel) => {
+                                      const {default:RFB}=await import('/novnc/core/rfb.js');
+                                      const node=document.createElement('div');document.body.append(node);
+                                      const r=new RFB(node,`ws://${location.host}/desktop/${channel}`);
+                                      r.viewOnly=false;
+                                      const state={channel,connected:false,sends:0,events:[]};
+                                      const record=event=>state.events.push({event,at:performance.now()});
+                                      window.__acceptanceInputProbe={state,close:()=>{r.disconnect();node.remove();}};
+                                      await new Promise((resolve,reject)=>{
+                                        const timer=setTimeout(()=>{
+                                          record('handshake-timeout');r.disconnect();
+                                          reject(new Error('VNC handshake timeout'));
+                                        },5000);
+                                        r.addEventListener('disconnect',()=>{
+                                          state.connected=false;record('disconnect');
+                                          clearTimeout(timer);reject(new Error('VNC disconnected'));
+                                        });
+                                        r.addEventListener('securityfailure',()=>{
+                                          record('securityfailure');clearTimeout(timer);
+                                          reject(new Error('VNC security failure'));
+                                        });
+                                        r.addEventListener('connect',()=>{
+                                          clearTimeout(timer);state.connected=true;record('connect');
+                                          r.sendKey(0x7a,'KeyZ');state.sends++;record('key-submitted');
+                                          resolve();
+                                        },{once:true});
+                                      });
+                                    }""",
+                                    channel,
+                                )
+                                if channel == "view":
+                                    # Negative security assertion: the entire value
+                                    # must stay unchanged throughout the live probe.
+                                    await headed_fixture(f"""
+                                        import time
+                                        pages = [p for p in context.pages if p.url == {URL + "/static/demo.html"!r}]
+                                        assert len(pages) == 1
+                                        note = pages[0].get_by_role('textbox', name='Project note', exact=True)
+                                        until = time.monotonic() + 1.0
+                                        while time.monotonic() < until:
+                                            actual = await note.input_value()
+                                            assert actual == 'VIEW_ONLY', actual
+                                            await asyncio.sleep(0.05)
+                                        assert await note.input_value() == 'VIEW_ONLY'
+                                    """)
+                                else:
+                                    await headed_fixture(f"""
+                                        from playwright.async_api import expect
+                                        pages = [p for p in context.pages if p.url == {URL + "/static/demo.html"!r}]
+                                        assert len(pages) == 1
+                                        await expect(pages[0].get_by_role('textbox', name='Project note', exact=True)).to_have_value('VIEW_ONLYz', timeout=10000)
+                                    """)
+                                state = await page.evaluate("() => window.__acceptanceInputProbe.state")
+                                assert state["sends"] == 1 and state["connected"], state
+                            except Exception as error:
+                                # Only this disposable fixture's value/focus and
+                                # connection events are recorded, never credentials.
+                                diagnostic = {"channel": channel, "error_class": type(error).__name__}
+                                try:
+                                    diagnostic["viewer"] = await page.evaluate("""() => ({
+                                        mode:document.querySelector('#status').textContent,
+                                        connected:document.querySelector('#screen').dataset.connected,
+                                        probe:window.__acceptanceInputProbe?.state || null
+                                    })""")
+                                    read_state = """() => {
+                                        const note=document.querySelector('#note');
+                                        const active=document.activeElement;
+                                        return {value:note.value,focused:document.hasFocus(),
+                                            activeTag:active?.tagName,activeId:active?.id,
+                                            selectionStart:note.selectionStart,selectionEnd:note.selectionEnd};
+                                    }"""
+                                    diagnostic["desktop"] = await headed_fixture(f"""
+                                        pages = [p for p in context.pages if p.url == {URL + "/static/demo.html"!r}]
+                                        assert len(pages) == 1
+                                        print(json.dumps(await pages[0].evaluate({read_state!r})))
+                                    """)
+                                    await page.screenshot(path=str(OUT / f"input-{channel}-viewer.png"), full_page=True)
+                                    _, png = await observe()
+                                    (OUT / f"input-{channel}-desktop.png").write_bytes(png)
+                                except Exception as capture_error:
+                                    diagnostic["capture_error_class"] = type(capture_error).__name__
+                                (OUT / f"input-{channel}-diagnostic.json").write_text(
+                                    json.dumps(diagnostic, ensure_ascii=False, indent=2)
+                                )
+                                raise
+                            finally:
+                                await page.evaluate("""() => {
+                                    window.__acceptanceInputProbe?.close();
+                                    delete window.__acceptanceInputProbe;
+                                }""")
 
                         await inject("view")
                         snap = unpack(await call("browser_snapshot"))
                         assert "VIEW_ONLYz" not in snap["snapshot"], snap
-                        await page.get_by_role("button", name="Take control", exact=True).click()
+                        old_canvas = await page.locator("#screen canvas").element_handle()
+                        async with page.expect_websocket(
+                            lambda ws: ws.url == URL.replace("http://", "ws://") + "/desktop/control"
+                        ):
+                            await page.get_by_role("button", name="Take control", exact=True).click()
                         await page.locator("#status").filter(has_text="HUMAN").wait_for()
+                        await page.wait_for_function("""old => {
+                            const screen=document.querySelector('#screen');
+                            const canvas=screen.querySelector('canvas');
+                            return screen.dataset.connected==='true' && canvas && canvas!==old;
+                        }""", arg=old_canvas, timeout=20000)
                         await inject("control")
                         snap = unpack(await call("browser_snapshot"))
                         assert "VIEW_ONLYz" in snap["snapshot"], snap

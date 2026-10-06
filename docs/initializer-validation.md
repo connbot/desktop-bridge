@@ -11,7 +11,7 @@ created during implementation.
 ### Passed on the final code
 
 - `ruff check .`: passed.
-- `python -m pytest -q`: **458 passed, 4 skipped**, 2 warnings. The four skips
+- `python -m pytest -q`: **461 passed, 4 skipped**, 2 warnings. The four skips
   are the existing opt-in PostgreSQL integration tests, with no test DSN supplied.
   Warnings concern Starlette/httpx deprecation and an existing Pydantic forward
   reference; neither was hidden or converted to a pass assertion.
@@ -24,7 +24,8 @@ created during implementation.
   no-zone fallback, unknown dispatch and explicit safe retry. This is not a
   visual browser or a test of real download-manager behavior.
 - The Python suite includes **75 independent initializer security/race tests**,
-  15 runner-report tests, 4 dispatch-reconciliation tests and 3 stateless JSON
+  15 runner-report tests, 4 dispatch-reconciliation tests, 3 probe lifecycle tests
+  and 3 stateless JSON
   MCP transport tests. The transport tests include the real pinned MCP SDK:
   initialize, initialized notification (202), authorized GET (405), tools list
   and call (JSON), with no session ID or hanging SSE stream. Unauthorized GET
@@ -104,9 +105,25 @@ must be reviewed for the updated commit before calling these fixes visually pass
 
 A separate existing desktop acceptance run failed when Save was clicked before
 the expected UTF-8 clipboard text appeared. The failure does not establish one
-exclusive root cause. The VNC acknowledgement only establishes that key events
-were sent; the next CDP click can move focus before the application consumes them.
+exclusive root cause. The Cua call returning only establishes that key events
+were submitted; the next CDP click can move focus before the application consumes them.
 The harness now types exactly once, then observes the full expected textarea value
 with a five-second bound before clicking Save. It does not fill, retype or repaste,
 and the original final text assertion remains. Permanently lost input still fails.
 The backend and its input semantics were not changed.
+
+
+A later, separate noVNC control probe failed in
+[run 37544013225](https://github.com/connbot/desktop-bridge/actions/runs/37544013225)
+with `VIEW_ONLY` still present where the single appended `z` was expected. This
+was not the earlier clipboard assertion. The harness had disconnected the probe
+after an arbitrary 300 ms and then read the application once. It now waits for the
+main viewer's new control connection, submits `z` once, keeps the probe alive until
+the exact application value is observed (up to 10 seconds), and closes in `finally`.
+The read-only probe continuously checks the **entire unchanged value** during a
+one-second observation window; it is not reduced to an absence-of-`z` check.
+A failed probe records only disposable fixture values, focus/selection metadata,
+connection event names and current screenshots, never credentials or raw headers.
+There is no retyping, filling, key retry, backend modification or claim that the
+underlying cause of all lost input has been established. Real CI remains the
+acceptance boundary for these synchronization changes.

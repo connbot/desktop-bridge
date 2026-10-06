@@ -181,3 +181,10 @@ Dependencies are pinned where practical, including the reviewed Coding Tools com
 ## Share the project
 
 [Chinese and English community launch copy, title options, and demo storyboard](docs/community-launch.txt).
+
+<details>
+<summary>社区</summary>
+
+本项目已链接认可 [LINUX DO 社区](https://linux.do/)。
+
+</details>

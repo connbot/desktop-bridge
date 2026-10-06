@@ -114,3 +114,6 @@ yarl==1.25.1
 zope.interface==8.6
 psycopg==3.3.6
 psycopg-binary==3.3.6
+
+# Optional initializer control plane
+PyNaCl==1.6.2

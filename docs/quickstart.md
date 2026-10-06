@@ -213,3 +213,11 @@ processes and OAuth sessions do not survive a restart; a model task does not res
 itself. Download important results and back up the volume privately. Do not run
 `docker compose down -v` unless you intend to delete that data. Read the
 [security boundaries](../SECURITY.md) before connecting personal accounts.
+
+### Optional web setup wizard
+
+The [web initializer review build](initializer.md) offers guided setup with a
+required GitHub account and optional Cloudflare. It is not a deployed service yet;
+its offline demo creates only fictional resources. It provides no platform domain.
+Quick addresses change on restart; a user's fixed domain does not preserve the
+computer's files or guarantee that ChatGPT registration survives a new run.

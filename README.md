@@ -188,3 +188,12 @@ Dependencies are pinned where practical, including the reviewed Coding Tools com
 本项目已链接认可 [LINUX DO 社区](https://linux.do/)。
 
 </details>
+
+## Optional web setup wizard (local review build)
+
+A Chinese, beginner-oriented initializer is available in [`initializer/`](initializer/README.md).
+GitHub is required; Cloudflare and an existing active domain are optional. Quick
+mode needs neither, while named mode uses only the user's domain. It includes
+real provider adapters, a separately labeled offline demo and regression tests.
+It is **not deployed or production-accepted**; see the exact setup, security and
+real-provider/browser validation gates in [the initializer guide](docs/initializer.md).

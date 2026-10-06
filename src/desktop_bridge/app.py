@@ -806,7 +806,11 @@ def create_app(
         async def __call__(self, scope, receive, send):
             await manager.handle_request(scope, receive, send)
 
-    app.router.routes.append(Route("/mcp", endpoint=MCPApp(), methods=["GET", "POST", "DELETE"]))
+    # This stateless JSON transport has no standalone server notification stream.
+    # The SDK's json_response flag only changes POST responses; allowing GET
+    # would still open SSE, which the temporary Quick Tunnel cannot transport.
+    # Router-generated 405 responses retain the bearer check in protect().
+    app.router.routes.append(Route("/mcp", endpoint=MCPApp(), methods=["POST", "DELETE"]))
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     novnc = Path(os.environ.get("BRIDGE_NOVNC", "/usr/share/novnc"))
     if novnc.is_dir():

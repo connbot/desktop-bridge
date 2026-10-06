@@ -7,7 +7,16 @@ Linux 桌面、Chromium、终端和文件接入 ChatGPT。你可以看着它操�
 再把完成的文件下载下来。文件与代码工具由 [Coding Tools MCP](https://github.com/xyTom/coding-tools-mcp) 提供。
 
 模型、规划和任务推进由客户端负责。本项目提供电脑，没有内置模型循环或调度器；
-客户端停止调用后，服务不会自行持续思考。这是单一可信用户的自托管预览版。
+客户端停止调用后，服务不会自行持续思考。这是面向单一可信用户的预览版。
+
+## 第一版先用 GitHub Actions 限时体验
+
+按 [GitHub Actions 开发/测试指南](actions-preview.zh-CN.md)，在你自己的 Fork 中启动一次临时会话。
+Quick Tunnel 路线不需要本机 Docker 或 Cloudflare 账号；ChatGPT 仍需自定义 MCP 写入权限。
+默认就绪后运行 60 分钟，结束或取消后，文件和浏览器状态都会删除。请提前下载结果，
+并遵守 GitHub 账户配额与 Actions 条款。指南内含连接步骤，接好后可做下面的首次任务。
+
+以下 Docker 步骤保留给希望在自有主机上长期运行、保存数据的用户。
 
 ## 开始前确认
 

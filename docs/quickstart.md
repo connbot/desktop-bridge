@@ -6,6 +6,18 @@ This guide gets you from a fresh checkout to a file you can download. Agent
 Computer supplies a Linux desktop, browser and file tools. Your MCP client supplies
 the model and decides what to do next; there is no autonomous model loop here.
 
+## First release: try a temporary preview
+
+Start with the [GitHub Actions development/testing guide](actions-preview.zh-CN.md)
+(in Chinese) to run a disposable session from your own fork. No local Docker or
+Cloudflare account is needed for its Quick Tunnel route. The default session lasts
+60 minutes after readiness; download results before it ends. Files and browser
+sessions are deleted when the run ends or is cancelled. GitHub account quotas and
+Actions terms apply. Your ChatGPT account still needs custom MCP write tools.
+
+The guide includes connection steps. Once connected, try [the first task below](#4-make-one-small-verifiable-result).
+The remaining setup steps are for optional persistent Docker self-hosting.
+
 ## Before you start
 
 - **A suitable host:** Linux x86-64 is the tested target. Allow 3 GB of memory for

@@ -4,13 +4,18 @@
 
 Want the computer-use side of [Muse](https://introducing.muse.ai/) or [dots](https://chatgpt.com/features/dots/) in your existing ChatGPT?
 
-Agent Computer is an open-source project that connects ChatGPT to a self-hosted Linux desktop. It gives ChatGPT a browser, terminal, and persistent files for concrete work: research a topic, run a script, or build and check a small web page. Watch the work happen and download the result. ChatGPT drives the tasks; this project provides the computer.
+Agent Computer is an open-source project that connects ChatGPT to a self-hosted Linux desktop. It gives ChatGPT a browser, terminal, and workspace files for concrete work: research a topic, run a script, or build and check a small web page. Watch the work happen and download the result. ChatGPT drives the tasks; this project provides the computer.
 
 File editing, shell commands, and code execution are powered by **[Coding Tools MCP](https://github.com/xyTom/coding-tools-mcp), also built by xyTom**. One MCP connection brings those tools and the browser into the same workspace.
 
-**Self-hosted preview · One trusted owner · Apache-2.0**
+**Early preview · One trusted owner · Apache-2.0**
 
-[English quickstart](docs/quickstart.md) · [简体中文上手](docs/quickstart.zh-CN.md) · [Deployment](docs/deployment.md) · [Contributing](CONTRIBUTING.md) · [Roadmap](ROADMAP.md) · [Changelog](CHANGELOG.md)
+[GitHub Actions preview / 限时体验](docs/actions-preview.zh-CN.md) · [English quickstart](docs/quickstart.md) · [简体中文上手](docs/quickstart.zh-CN.md) · [Deployment](docs/deployment.md) · [Contributing](CONTRIBUTING.md) · [Roadmap](ROADMAP.md) · [Changelog](CHANGELOG.md)
+
+![Agent Computer desktop and workspace with sample data](docs/media/agent-computer-social-preview.png)
+
+[Demo videos and v0.1.0 release](https://github.com/connbot/desktop-bridge/releases/tag/v0.1.0).
+The demo is a scripted MCP sequence with sample data. The setup video covers optional Docker self-hosting.
 
 ## What can you use it for?
 
@@ -32,7 +37,7 @@ ChatGPT → OAuth + MCP → Agent Computer
 
 You run the computer. ChatGPT supplies the model, plans the task, and calls its tools. The server provides the desktop and execution environment; it has no background model loop or scheduler. When the client stops calling tools, the server does not continue reasoning on its own.
 
-Browser automation and desktop control use the same visible Chromium session. Files live in `/data/workspace` on a persistent Docker volume. Other MCP clients can connect if they support Streamable HTTP and the required OAuth flow; account-specific compatibility still needs testing.
+Browser automation and desktop control use the same visible Chromium session. With Docker self-hosting, files live in `/data/workspace` on a persistent volume. GitHub Actions preview files are temporary. Other MCP clients can connect if they support Streamable HTTP and the required OAuth flow; account-specific compatibility still needs testing.
 
 ## Get started
 
@@ -42,7 +47,21 @@ Edu; Pro access is read/fetch-only. Account/workspace permissions vary. See
 [OpenAI's current requirements](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt)
 (checked October 5, 2026).
 
-### 1. Start locally
+### Try it with GitHub Actions
+
+For this first release, start with the [temporary development/testing preview](docs/actions-preview.zh-CN.md)
+(Chinese guide). Fork the repository, enable Actions, set your owner secret, and run
+**Launch MCP preview**. The guide covers OAuth setup and a small first task. You do
+not need a local Docker installation or a Cloudflare account for the Quick Tunnel route.
+
+The default session lasts 60 minutes after readiness, within GitHub's job limits.
+When it ends or is cancelled, the desktop, files and browser sessions are deleted.
+Download results first. URLs change between runs; account quotas and GitHub Actions
+terms apply. Use this for developing and testing Agent Computer.
+
+For a persistent computer on your own host, follow the existing Docker path below.
+
+### 1. Start locally (optional self-hosting)
 
 You need Git, Python 3.11+, a running [Docker installation with Compose](https://docs.docker.com/compose/install/),
 and at least 3 GB available for the container plus host overhead. Linux x86-64 is

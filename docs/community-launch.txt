@@ -4,14 +4,16 @@
 正文
 如果你看过 Muse、Grok Bot、Dots，也想让正在用的 ChatGPT 直接操作电脑，可以看看我做的开源项目 Agent Computer。
 
-你自己用 Docker 跑一台 Linux 电脑，通过 MCP + OAuth 接到 ChatGPT。它就能操作浏览器、运行命令、读写文件，你可以在网页里看到执行过程。
+第一版先用 GitHub Actions 做限时开发/测试体验：Fork 仓库，设置 owner secret，运行 Launch MCP preview，再通过 MCP + OAuth 接到 ChatGPT。它就能操作浏览器、运行命令、读写文件，你可以在网页里看到执行过程。
+
+默认就绪后运行 60 分钟，结束或取消后，文件和浏览器状态都会删除，记得提前下载结果。用量受 GitHub 账户配额和 Actions 条款约束。想在自有主机上长期运行，也保留了 Docker 自托管步骤。
 
 比如让它查资料后保存一份带来源的报告，写脚本处理文件，或者做个小网页、打开检查，再按你的要求修改。做出来的文件可以直接下载。
 
 文件、终端和代码编辑用的是我自己的 Coding Tools MCP：
 https://github.com/xyTom/coding-tools-mcp
 
-模型和任务推进还是由 ChatGPT 负责，这个项目提供电脑和工具。需要你的账号支持自定义 MCP 的写入工具；目前是单用户自托管预览版，建议先用公开资料和测试数据试。
+模型和任务推进还是由 ChatGPT 负责，这个项目提供电脑和工具。需要你的账号支持自定义 MCP 的写入工具；目前是单用户预览版，建议先用公开资料和测试数据试。
 
 项目地址：
 https://github.com/connbot/desktop-bridge
@@ -83,6 +85,8 @@ Ask ChatGPT to browse, run commands, and create files. It can research a topic a
 
 Files and code execution use my Coding Tools MCP:
 https://github.com/xyTom/coding-tools-mcp
+
+Start with the GitHub Actions development/testing preview in your own fork. Sessions default to 60 minutes after readiness; files and browser sessions are deleted when the run ends or is cancelled. Download results first. GitHub account quotas and Actions terms apply. Docker self-hosting remains available for persistent use.
 
 ChatGPT runs the model; this project provides the computer. It's an early, single-owner release for accounts with custom MCP write tools enabled.
 

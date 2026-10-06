@@ -4,26 +4,36 @@
 Cloudflare 提供 HTTPS 地址，ChatGPT 通过 OAuth + Streamable HTTP 调用桌面、
 浏览器、文件和终端工具。无需 OpenAI API key；模型由你的 ChatGPT 客户端提供。
 
+默认就绪后运行 60 分钟，结束或取消后会删除电脑、文件和浏览器状态，请提前下载结果。
+这是限时开发/测试体验；用量受 GitHub 账户配额与 Actions 条款约束。
+
 ## 最短路径：临时地址
+
+先将 [项目仓库](https://github.com/connbot/desktop-bridge) Fork 到自己的 GitHub 账号，
+进入自己的 Fork，在 Actions 页面按提示启用 workflow（如果提示）。下面的 secret 和运行
+操作都在你自己的仓库完成。Quick Tunnel 路线不需要本机 Docker 或 Cloudflare 账号。
+先确认 ChatGPT 账号支持自定义 MCP **写入**工具，见 [OpenAI 当前要求](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt)。
 
 1. 在 GitHub 仓库 Settings → Secrets and variables → Actions 新建 repository secret：
    `BRIDGE_OWNER_TOKEN`。值支持普通密码或口令，8–256 个字符，允许空格和符号（不能全是空白）。
    建议使用独立的随机密码，不要复用其他账号的密码。只在 GitHub 的 secret 输入框和本服务的登录页输入，不要发到聊天、
    workflow inputs、Issue、代码或日志。它允许登录并批准电脑访问。
 2. 打开 Actions → **Launch MCP preview** → Run workflow。
-   `mode=preview`，`tunnel=quick`，默认运行 60 分钟。可以选 30/120/350 分钟。
+   `mode=preview`，`tunnel=quick`，默认运行 60 分钟。可以选 30/120/300/350 分钟。
    `public_url` 留空。不需要 Cloudflare 账号或 Cloudflare token。
 3. 等待构建、隧道就绪和真实公网烟测。展开 **Start authenticated HTTPS MCP preview**
-   步骤或打开运行 Summary，复制 `MCP endpoint`，形如
-   `https://随机名称.trycloudflare.com/mcp`。验证模式不会留下可用会话。
+   步骤日志，复制 `MCP endpoint`，形如
+   `https://随机名称.trycloudflare.com/mcp`。运行中请看步骤日志；Summary 可能在步骤结束后才显示。
+   验证模式不会留下可用会话。
 4. 在支持自定义 MCP 的 ChatGPT/OpenAI 界面创建连接，填完整 `/mcp` 地址；
    认证选择 **OAuth**，客户端注册选择 **Dynamic client registration / DCR**（若界面询问）。
    不需要静态 client ID 或 client secret。不要选择“无认证”。
 5. 跟随授权页，用第一步的 owner token 登录；核对客户端及回调地址，再批准访问。
    授权页说明客户端能查看和操作桌面、浏览器、文件和终端。
 6. 在聊天中选择这个连接，先试：“查看电脑当前状态，再截一张图；不要登录任何账号。”
-   也可以让它写一个测试文件并读取回来。
-7. Summary 中的 `Desktop and OAuth login` 地址可查看实时桌面、接管、暂停或下载文件。
+   然后让它创建 `hello-agent-computer.txt`，写入“你好，Agent Computer”，再读取确认。
+7. 同一步骤日志中的 `Desktop and OAuth login` 地址可查看实时桌面、接管、暂停或下载文件。
+   在 **Your files** 点 **Refresh**，下载并打开刚才的测试文件，确认内容。
    如果 AI 被暂停，点击 **Hand back to AI**；AI 不能自行撤销你的暂停或隐私接管。
 
 ChatGPT 中是否显示创建连接入口取决于账户、工作区权限和当前产品界面。

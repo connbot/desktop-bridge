@@ -1,5 +1,14 @@
 # Verification record
 
+## First-release runtime checks
+
+October 6, 2026, commit [3523281](https://github.com/connbot/desktop-bridge/commit/3523281383c2aa6e5ae5fcc9d5bc5abb9e96c00a):
+
+- [Core CI](https://github.com/connbot/desktop-bridge/actions/runs/37393769635): all six jobs passed, covering Python 3.11–3.13 and three real Docker browser/desktop/OAuth/takeover/restart runs. The Python 3.12 job passed 361 tests, with four optional database tests skipped; all six viewer regression tests passed.
+- [Real TLS PostgreSQL](https://github.com/connbot/desktop-bridge/actions/runs/37393769874): all 365 tests passed.
+- [Fly-target image](https://github.com/connbot/desktop-bridge/actions/runs/37393770481) passed image validation; this is not a live Fly deployment.
+- The prior [public HTTPS tunnel smoke](https://github.com/connbot/desktop-bridge/actions/runs/37273834805) passed at `202f5b6`. The preview workflow, preview runner, tunnel smoke, Dockerfile and dependency pins are unchanged at `3523281`. This is historical tunnel evidence, not a new exact-commit tunnel test or a new ChatGPT-account recording.
+
 ## Agent Computer relaunch validation
 
 October 5, 2026, commit [202f5b6](https://github.com/connbot/desktop-bridge/commit/202f5b6449e0bf25be7a08d0eef2e6161457d222):

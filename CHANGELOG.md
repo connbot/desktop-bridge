@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 - 2026-10-06
 
 ### Added
+- An on-demand GitHub Actions development/testing preview, with a guided first file task and explicit session expiry/data-loss limits.
 - A read-only setup doctor for Docker, Compose, configuration, and optional local readiness checks.
 - First-success walkthroughs, deployment checkpoints, and troubleshooting guidance.
 - Contribution and security guidance, bug/feature forms, and a pull-request checklist.

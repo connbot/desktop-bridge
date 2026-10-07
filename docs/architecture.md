@@ -46,8 +46,15 @@ execution environment, not an adversarial multi-tenant security boundary.
 The viewer reconnects to the appropriate stream after control changes. A durable
 SQLite receipt marks in-flight requests as unknown after a crash, preventing
 blind replay. File and profile persistence use one Docker volume. OAuth grants
-and owner sessions are memory-only and are invalid after restart. Container
-restart is not a memory snapshot and does not resume a model task.
+and owner sessions are memory-only and are invalid after restart. Refresh-capable
+clients receive rotating, hashed refresh tokens with a 30-day absolute grant limit
+and 7-day refresh inactivity limit. Access tokens remain one hour, clipped to the
+grant deadline. Rotation, family-wide replay revocation and token issuance are
+atomic under a process-local lock; run one gateway process. Consumed refresh
+hashes remain until the family expires/revokes so replay is still detectable after
+many rotations. Active grants and stored refresh hashes are bounded; exhausted
+capacity fails closed rather than evicting replay history. Container restart is
+not a memory snapshot and does not resume a model task.
 
 ## Acceptance evidence
 

@@ -1,4 +1,5 @@
 name: Launch MCP preview
+run-name: MCP preview ${{ inputs.operation_id || github.run_id }} ${{ inputs.launch_id || '' }}
 on:
   workflow_dispatch:
     inputs:
@@ -21,11 +22,24 @@ on:
         description: 'Named tunnel only: https://your-hostname (no /mcp suffix)'
         type: string
         default: ''
+      operation_id:
+        description: 'Initializer operation ID (leave empty for a manual preview)'
+        type: string
+        default: ''
+      launch_id:
+        description: 'Unique initializer launch ID (leave empty for a manual preview)'
+        type: string
+        default: ''
+      initializer_url:
+        description: 'Initializer HTTPS origin (leave empty for a manual preview)'
+        type: string
+        default: ''
   push:
     branches: [main]
-    paths: ['.github/workflows/preview.yml', 'scripts/preview.py', 'scripts/tunnel_smoke.py']
+    paths: ['.github/workflows/preview.yml', 'scripts/preview.py', 'scripts/tunnel_smoke.py', 'scripts/initializer_events.py']
 permissions:
   contents: read
+  id-token: write
 concurrency:
   group: desktop-preview-${{ github.event_name }}
   cancel-in-progress: false
@@ -38,6 +52,9 @@ jobs:
       TUNNEL_KIND: ${{ github.event_name == 'push' && 'quick' || inputs.tunnel }}
       PREVIEW_MINUTES: ${{ inputs.minutes || '60' }}
       PREVIEW_PUBLIC_URL: ${{ inputs.public_url }}
+      INITIALIZER_OPERATION: ${{ inputs.operation_id }}
+      INITIALIZER_LAUNCH_ID: ${{ inputs.launch_id }}
+      INITIALIZER_URL: ${{ inputs.initializer_url }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:

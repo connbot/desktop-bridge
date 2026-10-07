@@ -95,7 +95,12 @@ review the callback and approve access. No static client secret is required.
 Select the app in a regular ChatGPT chat and keep the viewer open beside it.
 
 The [step-by-step quickstart](docs/quickstart.md) covers account setup, local vs.
-remote addresses, authorization expiry and troubleshooting. No model API key is
+remote addresses, authorization expiry and troubleshooting. Refresh-capable clients
+can renew one-hour access tokens automatically within a 30-day authorization
+(7-day refresh inactivity limit); existing connections need new client registration
+and one new approval (usually by recreating the app connection).
+Revocation/restarts still end authorization, and this does not extend a temporary
+Actions run. No model API key is
 needed for this direct connection. The server does not include a model subscription.
 
 ### 3. Get a result you can check
@@ -188,3 +193,12 @@ Dependencies are pinned where practical, including the reviewed Coding Tools com
 本项目已链接认可 [LINUX DO 社区](https://linux.do/)。
 
 </details>
+
+## Optional web setup wizard (local review build)
+
+A Chinese, beginner-oriented initializer is available in [`initializer/`](initializer/README.md).
+GitHub is required; Cloudflare and an existing active domain are optional. Quick
+mode needs neither, while named mode uses only the user's domain. It includes
+real provider adapters, a separately labeled offline demo and regression tests.
+It is **not deployed or production-accepted**; see the exact setup, security and
+real-provider/browser validation gates in [the initializer guide](docs/initializer.md).

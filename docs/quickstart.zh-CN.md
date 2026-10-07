@@ -109,8 +109,29 @@ python3 scripts/doctor.py --running
 **成功标志：**发送“请使用 Agent Computer 查看会话状态并截一张图，不要登录任何网站”。
 应看到实际工具调用，截图与观看页是同一个桌面。仅扫描到工具还不算完成验证。
 
-访问 token 有效期一小时，本版没有 refresh token，过期后重新授权。服务重启也会清空
-注册与授权；若客户端仍保存旧 client ID 并报 unregistered client，需要重新创建连接。
+访问 token 仍在一小时后过期。注册时声明 `authorization_code` 和 `refresh_token` 的客户端，
+经所有者同意后会获得每次使用都轮换的 refresh token，可以自动续期，无需每小时手动授权。
+授权自首次批准起最多持续 30 天；连续 7 天未使用刷新凭据也会失效，刷新不会延长 30 天绝对上限。
+授权页会明确显示这些期限。仅注册授权码模式的客户端仍需在一小时后重新授权。
+
+**升级已有连接：**请重新创建 app 连接（或使用会重新注册客户端的连接流程），再批准一次，
+让客户端获取新 OAuth 元数据、注册刷新能力并获得首个 refresh token。
+仅对旧的授权码模式 client ID 再次批准，不会启用刷新能力。旧版仅有访问 token 的连接不能直接升级或续期，
+过期 token 也不能换长期授权。仅刷新工具列表不会签发 refresh token。
+
+**撤销与重启：**点 **Disconnect & revoke** 会立即使所有访问／刷新 token、待兑换授权码和
+观看页会话失效。服务重启还会清空客户端注册；若报 unregistered client，请重新创建连接。
+修改所有者密码须用新配置重新创建容器。刷新凭据不跨服务重启保存，也不会延长 GitHub Actions
+临时运行时长（默认 60 分钟）；Quick Tunnel 下次运行还可能换地址。观看页的独立登录仍最多 8 小时。
+
+刷新 token 只能用一次：客户端须保存每次响应中的新 token，并串行执行刷新。
+重复使用旧刷新 token（包括响应丢失后重试）会撤销该次授权下所有 token，必须重新连接；
+这是检测凭据被盗后重放的安全措施。
+
+离线回归已用官方 MCP Python OAuth 客户端覆盖发现、注册、PKCE，以及模拟两次一小时过期后的
+自动刷新；没有验证真实 ChatGPT 账号的长期续期或线上运行。参考
+[OpenAI 刷新凭据配置说明](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt)和
+[MCP 刷新凭据规范](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#refresh-tokens)。
 
 ## 4. 完成第一个可检查的任务
 
@@ -160,7 +181,7 @@ python3 scripts/doctor.py --running
 | 改成 HTTPS 后本地登录/画面失败 | 改用配置中的 HTTPS 观看地址；cookie 和 WebSocket 都检查该 origin。 |
 | ChatGPT 没有创建入口/写入工具 | 核对账号和工作区权限；服务可访问不代表账号有权限。 |
 | `PERMISSION_REQUIRED` | 默认 `safe` 策略可能拒绝该命令。停止这一步，保留现有结果，让所有者审阅权限。不要自动切换 `trusted`/`dangerous`，也不要改写命令绕过拒绝。 |
-| `UNAUTHORIZED` / `INVALID_GRANT` | 重新授权；授权码短时有效且只能用一次，访问 token 一小时过期。 |
+| `UNAUTHORIZED` / `INVALID_GRANT` | 先确认服务仍在运行。刷新授权到期、撤销、重放或服务重启后需重连；旧版仅访问 token 的连接需重新注册客户端并批准一次才能获得刷新能力。不能把所有者密码作为 bearer token。 |
 | 重启后 `unregistered client` | 重新创建连接，重新注册客户端。 |
 | `CONTROL_NOT_OWNED` | 在观看页点 **Hand back to AI**。模型不能自行解除接管、暂停或停止；AI 空闲约 30 分钟也会暂停。 |
 | `STALE_OBSERVATION` | 重新截图/获取浏览器快照，再做下一步。 |

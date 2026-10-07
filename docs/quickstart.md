@@ -127,9 +127,37 @@ follow-up actions. Confirm actions when the client asks.
 screenshot. Do not sign in to any website.” You should see an actual tool call and
 the same desktop as the viewer. A successful tool scan alone is not this check.
 
-The server issues one-hour access tokens with no refresh tokens. Reauthorize after
-expiry. Restarting the server also clears registrations and grants. If reauthorization
-reports an unregistered client, recreate the app connection to register again.
+Access tokens still expire after one hour. Clients that register both
+`authorization_code` and `refresh_token` receive a rotating refresh token after
+owner approval and can renew access without hourly consent. Approval lasts at most
+30 days from the original authorization, with a 7-day refresh inactivity limit;
+renewing does not extend the 30-day limit. The consent page shows these limits.
+Code-only clients keep one-hour authorization and must reauthorize on expiry.
+
+**Upgrading an existing connection:** recreate the app connection (or use a client
+flow that re-registers), then approve once so it fetches the new OAuth metadata,
+registers refresh support and obtains its first refresh token. Reauthorizing the
+same existing code-only client ID does not enable refresh support. Existing access-only tokens cannot be upgraded or refreshed,
+including after expiry. A tools-list refresh alone does not issue a refresh token.
+
+**Revocation and restarts:** **Disconnect & revoke** immediately invalidates all
+access/refresh tokens, pending codes and viewer sessions. A server restart also
+clears client registrations; if the client reports an unregistered client, recreate
+the app connection. Changing the owner password requires recreating the container.
+Refresh tokens do not survive a restart or extend a temporary GitHub Actions run
+(default 60 minutes). A Quick Tunnel can also get a different URL on the next run.
+The viewer's separate login remains valid for up to 8 hours.
+
+Refresh tokens are single-use: clients must save the replacement returned by every
+refresh and serialize refresh requests. Reusing an older refresh token, including
+a retry after a lost response, revokes that entire authorization and requires
+reconnection. This deliberately detects stolen-token replay.
+
+The offline regression uses the official MCP Python OAuth client to test discovery,
+registration, PKCE and two automatic refreshes after simulated one-hour expiries.
+It does not establish a live ChatGPT account's behavior or production availability.
+See [OpenAI's refresh-token setup guidance](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt)
+and [MCP refresh-token guidance](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#refresh-tokens).
 
 ## 4. Make one small, verifiable result
 
@@ -190,7 +218,7 @@ These prompts are examples, not a promised model success rate. See the
 | HTTP viewer login or screen fails after HTTPS setup | Open the configured HTTPS origin; cookies and WebSocket origin checks use it. |
 | ChatGPT has no custom-app creation or write tools | Recheck account/workspace eligibility and permissions in OpenAI's linked guide. A reachable server cannot override them. |
 | `PERMISSION_REQUIRED` from a coding tool | The `safe` command policy may deny this operation. Stop the denied step, keep any existing result, and ask the owner to review the policy. Do not automatically retry in `trusted`/`dangerous` mode or disguise the command. |
-| `UNAUTHORIZED` or `INVALID_GRANT` | Reauthorize. Codes are short-lived and single-use; access tokens expire after one hour. Never substitute the owner token as a bearer token. |
+| `UNAUTHORIZED` or `INVALID_GRANT` | Check the endpoint is still running. Reconnect if refresh authorization expired, was revoked/replayed, or the service restarted. Old access-only connections need new client registration and approval for refresh support. Never use the owner token as a bearer token. |
 | `Unregistered client` after restart | Recreate the connection so the client registers again. |
 | `CONTROL_NOT_OWNED` | Click **Hand back to AI** in the viewer. Only the owner can release a pause/takeover; `session_start` cannot. Idle agent sessions pause after about 30 minutes. |
 | `STALE_OBSERVATION` | Take a new screenshot or browser snapshot before the next action. |

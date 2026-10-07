@@ -95,7 +95,12 @@ review the callback and approve access. No static client secret is required.
 Select the app in a regular ChatGPT chat and keep the viewer open beside it.
 
 The [step-by-step quickstart](docs/quickstart.md) covers account setup, local vs.
-remote addresses, authorization expiry and troubleshooting. No model API key is
+remote addresses, authorization expiry and troubleshooting. Refresh-capable clients
+can renew one-hour access tokens automatically within a 30-day authorization
+(7-day refresh inactivity limit); existing connections need new client registration
+and one new approval (usually by recreating the app connection).
+Revocation/restarts still end authorization, and this does not extend a temporary
+Actions run. No model API key is
 needed for this direct connection. The server does not include a model subscription.
 
 ### 3. Get a result you can check

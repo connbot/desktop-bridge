@@ -478,8 +478,11 @@ def create_app(
 
     @app.exception_handler(BridgeError)
     async def bridge_error(request, error):
+        body = {"error": error.code.lower(), "message": str(error)}
+        if request.url.path == "/token":
+            body["error_description"] = str(error)
         return JSONResponse(
-            {"error": error.code.lower(), "message": str(error)},
+            body,
             status_code=401 if error.code == "UNAUTHORIZED" else 503 if error.code in {"CONTEXT_UNAVAILABLE", "CONTEXT_OUTCOME_UNKNOWN"} else 400,
         )
 
@@ -501,6 +504,8 @@ def create_app(
                 )
         result = await call_next(request)
         result.headers["Cache-Control"] = "no-store"
+        if request.url.path == "/token":
+            result.headers["Pragma"] = "no-cache"
         result.headers["X-Content-Type-Options"] = "nosniff"
         result.headers["Referrer-Policy"] = "no-referrer"
         result.headers["X-Frame-Options"] = "DENY"
@@ -680,7 +685,7 @@ def create_app(
             "token_endpoint": base_url + "/token",
             "registration_endpoint": base_url + "/register",
             "response_types_supported": ["code"],
-            "grant_types_supported": ["authorization_code"],
+            "grant_types_supported": ["authorization_code", "refresh_token"],
             "code_challenge_methods_supported": ["S256"],
             "token_endpoint_auth_methods_supported": ["none"],
             "scopes_supported": ["computer"],
@@ -705,8 +710,15 @@ def create_app(
             for k, v in params.items()
         )
         csrf = auth.session(request.cookies.get("bridge_session"))[0]
+        renewable = "refresh_token" in client["grant_types"]
+        duration = (
+            "Access renews automatically for up to 30 days, unless unused for 7 days. "
+            "Disconnect &amp; revoke or a server restart ends access immediately."
+            if renewable else "Access expires after one hour; this client did not request renewal."
+        )
+        button = "Approve renewable access" if renewable else "Approve for one hour"
         return HTMLResponse(
-            f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><link rel="stylesheet" href="/static/style.css"><title>Approve computer access</title></head><body><main class="approval"><h1>Connect {html.escape(client["client_name"])}?</h1><p>This client can view and operate your desktop, browser, files, and shell. Approve only your trusted AI client.</p><p>Callback: <strong>{html.escape(params["redirect_uri"])}</strong></p><form method="post" action="/authorize">{fields}<input type="hidden" name="csrf" value="{csrf}"><button type="submit">Approve for one hour</button> <a href="/">Cancel</a></form></main></body></html>'''
+            f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><link rel="stylesheet" href="/static/style.css"><title>Approve computer access</title></head><body><main class="approval"><h1>Connect {html.escape(client["client_name"])}?</h1><p>This client can view and operate your desktop, browser, files, and shell. Approve only your trusted AI client.</p><p>Callback: <strong>{html.escape(params["redirect_uri"])}</strong></p><p>{duration}</p><form method="post" action="/authorize">{fields}<input type="hidden" name="csrf" value="{csrf}"><button type="submit">{button}</button> <a href="/">Cancel</a></form></main></body></html>'''
         )
 
     @app.post("/authorize")
@@ -725,7 +737,10 @@ def create_app(
     @app.post("/token")
     async def token(request: Request):
         auth.throttle("token")
-        return auth.exchange(dict(await request.form()))
+        form = await request.form()
+        if len(form.multi_items()) != len(form):
+            raise BridgeError("INVALID_REQUEST", "Duplicate token parameters")
+        return auth.exchange(dict(form))
 
     @app.websocket("/desktop/{mode}")
     async def desktop_socket(websocket: WebSocket, mode: str):

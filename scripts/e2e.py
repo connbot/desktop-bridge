@@ -471,17 +471,9 @@ async def run(restart):
                         page.on("pageerror", lambda e: errors.append(str(e)))
                         # Capture only this disposable viewer's shared transports so
                         # the test can simulate loss without a production reconnect UI.
-                        await page.add_init_script("""(() => {
-                            const NativeWebSocket = window.WebSocket;
-                            window.WebSocket = class extends NativeWebSocket {
-                                constructor(...args) {
-                                    super(...args);
-                                    if (new URL(args[0]).pathname === '/desktop/shared') {
-                                        (window.__sharedSockets ||= []).push(this);
-                                    }
-                                }
-                            };
-                        })();""")
+                        await page.add_init_script(
+                            path=Path(__file__).with_name("capture-shared-sockets.js")
+                        )
                         # Exercise the actual browser approval journey, starting logged out.
                         ui_client = (
                             await http.post(

@@ -12,6 +12,38 @@ const response = data => ({ok:true, json:async () => data});
 const failure = message => ({ok:false, json:async () => ({message})});
 const status = {csrf:'test-only', state:'READY', events:[], mcp_url:'http://localhost/mcp', context_store:{provider:'disabled'}, in_flight:false};
 
+test('acceptance socket capture preserves the native prototype required by noVNC', () => {
+  class NativeWebSocket {
+    static OPEN = 1;
+    constructor(url, protocols) { this.url=url; this.protocols=protocols; }
+    send() {}
+    close() {}
+    get binaryType() { return 'arraybuffer'; }
+    get onerror() { return null; }
+    get onmessage() { return null; }
+    get onopen() { return null; }
+    get protocol() { return ''; }
+    get readyState() { return 1; }
+  }
+  const window = {WebSocket:NativeWebSocket};
+  const capture = fs.readFileSync(path.join(__dirname, '../scripts/capture-shared-sockets.js'), 'utf8');
+  vm.runInNewContext(capture, {window, URL});
+  const protocols=['binary'];
+  const socket=new window.WebSocket('ws://localhost/desktop/shared', protocols);
+  assert.equal(Object.getPrototypeOf(socket), NativeWebSocket.prototype);
+  assert.equal(socket.protocols, protocols);
+  assert.equal(window.WebSocket.OPEN, NativeWebSocket.OPEN);
+  assert.ok(socket instanceof window.WebSocket);
+  // Matches noVNC 1.3 Websock.attach's shallow property validation.
+  const props=[...Object.keys(socket), ...Object.getOwnPropertyNames(Object.getPrototypeOf(socket))];
+  for (const name of ['send','close','binaryType','onerror','onmessage','onopen','protocol','readyState']) {
+    assert.ok(props.includes(name), `Raw channel missing property: ${name}`);
+  }
+  new window.WebSocket('ws://localhost/desktop/view');
+  assert.equal(window.__sharedSockets.length, 1);
+  assert.equal(window.__sharedSockets[0], socket);
+});
+
 function harness({defer = [], deferImport = false} = {}) {
   const elements = new Map(), timers = new Map(), requests = [], pending = [], calls = [], connections = [], imports = [];
   let timerId = 0;

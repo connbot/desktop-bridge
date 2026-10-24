@@ -35,6 +35,31 @@ def unpack(result):
         return {"text": "\n".join(texts)}
 
 
+async def assert_viewer_fits(page, *, fullscreen=False):
+    # Page-level scrollWidth misses overflow hidden by the desktop card. Check
+    # the actual noVNC canvas and both enclosing boxes after its resize settles.
+    await page.wait_for_function(
+        """fullscreen => {
+            const screen = document.querySelector('#screen');
+            const canvas = screen?.querySelector('canvas');
+            if (!canvas || canvas.width !== 1280 || canvas.height !== 800) return false;
+            const shell = document.querySelector('#screen-shell').getBoundingClientRect();
+            const view = screen.getBoundingClientRect(), image = canvas.getBoundingClientRect();
+            const contains = (outer, inner) => inner.left >= outer.left - 1 &&
+                inner.top >= outer.top - 1 && inner.right <= outer.right + 1 &&
+                inner.bottom <= outer.bottom + 1;
+            return image.width > 0 && image.height > 0 &&
+                contains(shell, view) && contains(view, image) &&
+                view.left >= -1 && view.right <= window.innerWidth + 1 &&
+                Math.abs(image.width * canvas.height / canvas.width - image.height) <= 1 &&
+                (!fullscreen || (Math.abs(view.width - window.innerWidth) <= 1 &&
+                    Math.abs(view.height - window.innerHeight) <= 1));
+        }""",
+        arg=fullscreen,
+        timeout=10000,
+    )
+
+
 async def headed_fixture(script):
     """Test-only external input, without advancing the bridge observation epoch.
 
@@ -730,8 +755,10 @@ async def run(restart):
                         await page.locator("#personal-settings > summary").click()
                         await page.get_by_role("button", name="Full screen", exact=True).click()
                         await page.wait_for_function("() => !!document.fullscreenElement")
+                        await assert_viewer_fits(page, fullscreen=True)
                         await page.evaluate("document.exitFullscreen()")
                         await page.wait_for_function("() => !document.fullscreenElement")
+                        await assert_viewer_fits(page)
                         control_canvas = await page.locator("#screen canvas").element_handle()
                         await page.get_by_role("button", name="Go private", exact=True).click()
                         await page.locator("#status").filter(has_text="Private").wait_for()
@@ -759,9 +786,11 @@ async def run(restart):
                             for(let i=0;i<d.length;i+=400)colors.add(`${d[i]},${d[i+1]},${d[i+2]}`);
                             return colors.size>30;
                         }""", timeout=20000)
+                        await assert_viewer_fits(page)
                         await page.screenshot(path=str(OUT / "viewer.png"), full_page=True)
                         for width in [390, 768]:
                             await page.set_viewport_size({"width": width, "height": 844})
+                            await assert_viewer_fits(page)
                             assert await page.evaluate(
                                 "document.documentElement.scrollWidth <= window.innerWidth"
                             ), f"Horizontal overflow at {width}px"
@@ -786,7 +815,7 @@ async def run(restart):
                             await page.screenshot(
                                 path=str(OUT / f"viewer-{width}.png"), full_page=True
                             )
-                        results.append("Responsive UI: collapsed setup, copy, private mode, automatic reconnect, 390px and 768px controls")
+                        results.append("Responsive UI: complete desktop fits at 1440px, 390px, 768px and fullscreen; collapsed setup, copy, private mode, automatic reconnect and controls")
                         assert not errors, errors
                         await browser_ui.close()
                     results.append(

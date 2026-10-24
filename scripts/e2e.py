@@ -469,6 +469,19 @@ async def run(restart):
                         page = await browser_ui.new_page(viewport={"width": 1440, "height": 1000})
                         errors = []
                         page.on("pageerror", lambda e: errors.append(str(e)))
+                        # Capture only this disposable viewer's shared transports so
+                        # the test can simulate loss without a production reconnect UI.
+                        await page.add_init_script("""(() => {
+                            const NativeWebSocket = window.WebSocket;
+                            window.WebSocket = class extends NativeWebSocket {
+                                constructor(...args) {
+                                    super(...args);
+                                    if (new URL(args[0]).pathname === '/desktop/shared') {
+                                        (window.__sharedSockets ||= []).push(this);
+                                    }
+                                }
+                            };
+                        })();""")
                         # Exercise the actual browser approval journey, starting logged out.
                         ui_client = (
                             await http.post(
@@ -495,7 +508,7 @@ async def run(restart):
                         await page.goto(URL + "/authorize?" + urlencode(ui_params))
                         await page.screenshot(path=str(OUT / "login.png"), full_page=True)
                         await page.get_by_label("Owner access token").fill(OWNER)
-                        await page.get_by_role("button", name="Open workspace").click()
+                        await page.get_by_role("button", name="Open computer").click()
                         await page.get_by_role("button", name="Approve for one hour").click()
                         await page.wait_for_url("http://127.0.0.1:43111/callback**")
                         ui_code = parse_qs(urlsplit(page.url).query)["code"][0]
@@ -513,18 +526,22 @@ async def run(restart):
                         results.append(
                             "Browser OAuth onboarding: login, explicit approval and bound token exchange"
                         )
+                        before_view = unpack(await call("session_status"))
+                        assert before_view["state"] == "AGENT"
                         await page.goto(URL)
-                        await page.locator("#screen canvas").wait_for(timeout=20000)
-                        await page.get_by_role("button", name="Take control", exact=True).click()
-                        await page.locator("#status").filter(has_text="HUMAN").wait_for()
-                        await page.get_by_role("button", name="Hand back to AI").click()
-                        await page.locator("#status").filter(has_text="AGENT").wait_for()
-                        await page.get_by_role("button", name="Pause AI").click()
-                        await page.locator("#status").filter(has_text="PAUSED").wait_for()
-                        await page.get_by_role("button", name="Hand back to AI").click()
-                        await page.locator("#status").filter(has_text="AGENT").wait_for()
+                        await page.locator('#screen[data-connected="true"] canvas').wait_for(timeout=20000)
+                        assert await page.evaluate("window.__sharedSockets.length") == 1
+                        after_view = unpack(await call("session_status"))
+                        assert after_view["state"] == "AGENT"
+                        assert after_view["epoch"] == before_view["epoch"]
+                        assert await page.locator("details[open]").count() == 0
+                        assert await page.get_by_role("button", name="Take control", exact=True).count() == 0
+                        assert await page.get_by_role("button", name="Hand back to AI", exact=True).count() == 0
+                        await page.locator("#workspace-details > summary").click()
                         await page.get_by_role("button", name="Refresh", exact=True).click()
                         await page.get_by_role("link", name="acceptance.txt").wait_for()
+                        await page.locator("#workspace-details > summary").click()
+                        results.append("Desktop opens first on shared input; watching does not change state or epoch")
                         # Canvas existence alone is not proof of a working screen.
                         await page.wait_for_function(
                             """() => {
@@ -552,7 +569,7 @@ async def run(restart):
                         async def inject(channel):
                             # Keep the probe alive until application-level evidence,
                             # not a fixed disconnect delay. Exactly one key is sent.
-                            assert channel in {"view", "control"}
+                            assert channel in {"view", "shared"}
                             try:
                                 await page.evaluate(
                                     """async (channel) => {
@@ -649,25 +666,44 @@ async def run(restart):
                         await inject("view")
                         snap = unpack(await call("browser_snapshot"))
                         assert "VIEW_ONLYz" not in snap["snapshot"], snap
-                        old_canvas = await page.locator("#screen canvas").element_handle()
-                        async with page.expect_websocket(
-                            lambda ws: ws.url == URL.replace("http://", "ws://") + "/desktop/control"
-                        ):
-                            await page.get_by_role("button", name="Take control", exact=True).click()
-                        await page.locator("#status").filter(has_text="HUMAN").wait_for()
-                        await page.wait_for_function("""old => {
-                            const screen=document.querySelector('#screen');
-                            const canvas=screen.querySelector('canvas');
-                            return screen.dataset.connected==='true' && canvas && canvas!==old;
-                        }""", arg=old_canvas, timeout=20000)
-                        await inject("control")
-                        snap = unpack(await call("browser_snapshot"))
-                        assert "VIEW_ONLYz" in snap["snapshot"], snap
-                        await page.get_by_role("button", name="Hand back to AI").click()
-                        await page.locator("#status").filter(has_text="AGENT").wait_for()
-                        await page.locator('#screen[data-connected="true"]').wait_for()
+                        background_command = await call("coding_exec_command", {
+                            "cmd": "sleep 30", "yield_time_ms": 0,
+                            "bridge_action_id": "shared-input-managed-sleep",
+                        })
+                        assert background_command.structuredContent["status"] == "running"
+                        before_input = unpack(await call("browser_snapshot"))
+                        await inject("shared")
+                        deadline = asyncio.get_running_loop().time() + 10
+                        while True:
+                            shared_state = unpack(await call("session_status"))
+                            if not shared_state["human_input_active"]:
+                                break
+                            assert asyncio.get_running_loop().time() < deadline, shared_state
+                            await asyncio.sleep(0.05)
+                        assert shared_state["state"] == "AGENT"
+                        stale = await call("browser_action", {
+                            "action": {"kind": "fill", "role": "textbox", "name": "Project note", "text": "STALE-WRITE"},
+                            "observation_id": before_input["observation_id"], "action_id": str(uuid.uuid4()),
+                        }, True)
+                        assert stale.isError and "STALE_OBSERVATION" in str(stale), stale
+                        fresh = unpack(await call("browser_snapshot"))
+                        assert "VIEW_ONLYz" in fresh["snapshot"], fresh
+                        await call("browser_action", {
+                            "action": {"kind": "fill", "role": "textbox", "name": "Project note", "text": "SHARED-RESUMED"},
+                            "observation_id": fresh["observation_id"], "action_id": str(uuid.uuid4()),
+                        })
+                        await headed_fixture(f"""
+                            from playwright.async_api import expect
+                            page = next(p for p in context.pages if p.url == {URL + "/static/demo.html"!r})
+                            await expect(page.get_by_role('textbox', name='Project note', exact=True)).to_have_value('SHARED-RESUMED')
+                        """)
+                        polled = await call("coding_write_stdin", {
+                            "command_id": background_command.structuredContent["command_id"],
+                            "chars": "", "yield_time_ms": 0, "bridge_action_id": "shared-input-poll-running",
+                        })
+                        assert polled.structuredContent["status"] == "running"
                         results.append(
-                            "Server-enforced view-only rejects injected input; human channel accepts it"
+                            "Legacy view rejects injected input; shared input keeps AGENT, invalidates old observation, allows fresh action, and leaves managed command running"
                         )
                         await page.wait_for_function(
                             """() => {
@@ -683,6 +719,7 @@ async def run(restart):
                         await page.screenshot(path=str(OUT / "viewer-before-controls.png"), full_page=True)
                         # CI headless browsers do not automatically grant clipboard access.
                         # First verify the denied-permission fallback, then actual copying.
+                        await page.locator("#connection-settings > summary").click()
                         await page.get_by_role("button", name="Copy endpoint").click()
                         await page.locator("#copy-feedback").filter(
                             has_text="Select and copy the endpoint manually."
@@ -693,19 +730,34 @@ async def run(restart):
                         await page.get_by_role("button", name="Copy endpoint").click()
                         await page.locator("#copy-feedback").filter(has_text="Endpoint copied").wait_for()
                         assert await page.evaluate("navigator.clipboard.readText()") == URL + "/mcp"
+                        await page.locator("#connection-settings > summary").click()
+                        await page.locator("#personal-settings > summary").click()
                         await page.get_by_role("button", name="Build a personal tool", exact=True).click()
                         assert "Use Coding Tools MCP" in await page.evaluate("navigator.clipboard.readText()")
                         await page.locator("#task-feedback").filter(has_text="Prompt copied").wait_for()
+                        await page.locator("#personal-settings > summary").click()
                         await page.get_by_role("button", name="Full screen", exact=True).click()
                         await page.wait_for_function("() => !!document.fullscreenElement")
                         await page.evaluate("document.exitFullscreen()")
                         await page.wait_for_function("() => !document.fullscreenElement")
-                        await page.get_by_role("button", name="Private takeover").click()
-                        await page.locator("#status").filter(has_text="PRIVATE").wait_for()
-                        await page.get_by_role("button", name="Hand back to AI").click()
-                        await page.locator("#status").filter(has_text="AGENT").wait_for()
-                        await page.get_by_role("button", name="Reconnect screen").click()
-                        await page.locator('#screen[data-connected="true"]').wait_for()
+                        control_canvas = await page.locator("#screen canvas").element_handle()
+                        await page.get_by_role("button", name="Go private", exact=True).click()
+                        await page.locator("#status").filter(has_text="Private").wait_for()
+                        assert (await call("desktop_screenshot", allow_error=True)).isError
+                        assert unpack(await call("session_status"))["state"] == "PRIVATE"
+                        assert await page.evaluate("old => document.querySelector('#screen canvas') === old", control_canvas)
+                        await page.get_by_role("button", name="Resume AI", exact=True).click()
+                        await page.get_by_role("button", name="Pause AI", exact=True).wait_for()
+                        assert unpack(await call("session_status"))["state"] == "AGENT"
+                        for _ in range(2):
+                            old_canvas = await page.locator("#screen canvas").element_handle()
+                            await page.evaluate("window.__sharedSockets.find(socket => socket.readyState === WebSocket.OPEN).close()")
+                            await page.wait_for_function("""old => {
+                                const screen = document.querySelector('#screen');
+                                const canvas = screen.querySelector('canvas');
+                                return screen.dataset.connected === 'true' && canvas && canvas !== old;
+                            }""", arg=old_canvas, timeout=20000)
+                            assert unpack(await call("session_status"))["state"] == "AGENT"
                         await page.wait_for_function(
                             """() => {
                             const c=document.querySelector('#screen canvas');
@@ -722,9 +774,14 @@ async def run(restart):
                                 "document.documentElement.scrollWidth <= window.innerWidth"
                             ), f"Horizontal overflow at {width}px"
                             await page.get_by_role("button", name="Pause AI").click()
-                            await page.locator("#status").filter(has_text="PAUSED").wait_for()
-                            await page.get_by_role("button", name="Hand back to AI").click()
-                            await page.locator("#status").filter(has_text="AGENT").wait_for()
+                            await page.locator("#status").filter(has_text="AI paused").wait_for()
+                            assert unpack(await call("session_status"))["state"] == "PAUSED"
+                            assert await page.locator('#screen[data-connected="true"]').count() == 1
+                            denied = await call("session_start", allow_error=True)
+                            assert denied.isError and "CONTROL_NOT_OWNED" in str(denied)
+                            await page.get_by_role("button", name="Resume AI").click()
+                            await page.get_by_role("button", name="Pause AI", exact=True).wait_for()
+                            assert unpack(await call("session_status"))["state"] == "AGENT"
                             await page.wait_for_function(
                                 """() => {
                                 const c=document.querySelector('#screen canvas');
@@ -737,11 +794,11 @@ async def run(restart):
                             await page.screenshot(
                                 path=str(OUT / f"viewer-{width}.png"), full_page=True
                             )
-                        results.append("Responsive UI: copy, private mode, reconnect, 390px and 768px controls")
+                        results.append("Responsive UI: collapsed setup, copy, private mode, automatic reconnect, 390px and 768px controls")
                         assert not errors, errors
                         await browser_ui.close()
                     results.append(
-                        "Real noVNC viewer rendered, takeover/pause/resume and artifact UI verified"
+                        "Real shared noVNC viewer rendered, pause/private/resume and artifact UI verified"
                     )
                 await http.post("/api/logout", headers=headers)
                 assert (

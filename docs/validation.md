@@ -1,5 +1,24 @@
 # Verification record
 
+## Shared desktop simplification (local review, October 24, 2026)
+
+Based on the still-unmerged setup/OAuth branch at `1bd4a1c22bea1246d43823336ad736021f55ea36`,
+not a deployed release. Local Python 3.12 verification: **556 passed, 4 optional
+PostgreSQL tests skipped**. All **18 viewer state regressions**, Ruff, Python/JS
+syntax, package wheel build and `git diff --check` passed. Regression checks
+cover authorization revoked during the input handshake and a stalled initial
+viewer connection. The final focused shared-input suite passed **70 tests**.
+
+These checks exercise synthetic protocol peers and the real gateway routes,
+not a real X11 desktop. The updated `scripts/e2e.py` still needs the complete
+isolated Docker build/start/client-install workflow in `.github/workflows/ci.yml`,
+including restart checks. Docker/x11vnc were unavailable here; isolated Chromium
+could not launch because this executor restricted socket creation. No visual or
+live GUI acceptance ran. In particular, actual noVNC/x11vnc message compatibility,
+the input acknowledgement barrier, held-input reconnect cleanup, and mobile
+rendering remain release gates. No push, merge, deployment, live account login,
+or security-setting change was made.
+
 ## First-release runtime checks
 
 October 6, 2026, commit [3523281](https://github.com/connbot/desktop-bridge/commit/3523281383c2aa6e5ae5fcc9d5bc5abb9e96c00a):

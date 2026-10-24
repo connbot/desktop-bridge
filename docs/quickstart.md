@@ -69,9 +69,20 @@ in your own editor and copy the value of `BRIDGE_OWNER_TOKEN` into the viewer's
 owner login. Never paste it into chat, a GitHub issue, or an MCP bearer-token field.
 The setup script creates a private `.env` and preserves it on reruns.
 
-The screen should show a Linux desktop with Chromium. The viewer starts read-only.
-If you want to try the desktop yourself, click **Take control**, wait for any
-in-flight action, then use the screen. Click **Hand back to AI** before the next step.
+The Linux desktop with Chromium opens first. Click or type directly; there is no
+control handoff, and watching does not pause the AI. Setup, files/activity and optional
+preferences/tasks stay collapsed below the screen.
+
+Owner input waits for the current AI action to finish, then runs between actions.
+Held keys or mouse buttons block new AI actions until released. The client must take
+a fresh screenshot or browser snapshot after your input, then continue; you do not
+need to resume it manually. Ordinary input does not cancel running commands or
+isolate you from background apps that can still change the desktop.
+
+Use **Pause AI** to explicitly block AI actions and attempt to stop tracked managed shell work.
+Use **Go private** to also block AI observations and tool access; it stays private
+until you choose **Resume AI**. Inspect running apps before entering secrets.
+Neither option can undo external effects or guarantee termination of unmanaged processes.
 
 ## 2. Give the remote client a reachable endpoint
 
@@ -146,7 +157,9 @@ clears client registrations; if the client reports an unregistered client, recre
 the app connection. Changing the owner password requires recreating the container.
 Refresh tokens do not survive a restart or extend a temporary GitHub Actions run
 (default 60 minutes). A Quick Tunnel can also get a different URL on the next run.
-The viewer's separate login remains valid for up to 8 hours.
+The viewer's separate login remains valid for up to 8 hours. Automatic screen
+reconnection only repairs a dropped transport; it does not extend any hosting or
+authorization lifetime, preserve an expired preview, or recreate a client registration.
 
 Refresh tokens are single-use: clients must save the replacement returned by every
 refresh and serialize refresh requests. Reusing an older refresh token, including
@@ -164,7 +177,8 @@ and [MCP refresh-token guidance](https://modelcontextprotocol.io/specification/2
 Send this in a chat with Agent Computer selected:
 
 > Use Agent Computer. Check the session state and start agent control if it is
-> READY; if I have paused or taken control, ask me to hand it back. Open
+> READY; if I explicitly paused it or went private, ask me to choose Resume AI.
+> After my ordinary input, wait until it finishes and take a fresh observation. Open
 > http://127.0.0.1:8080/static/demo.html in the computer's browser. Fill Project note
 > with “Hello from Agent Computer”, click Save note, and verify the saved message
 > on the page. Create hello-agent-computer.txt in the workspace containing the same
@@ -175,7 +189,7 @@ Send this in a chat with Agent Computer selected:
 
 1. The shared Chromium shows the acceptance lab and `Saved: Hello from Agent Computer`.
 2. ChatGPT reads back the actual saved file.
-3. In **Your files**, click **Refresh**, download `hello-agent-computer.txt`, and open it.
+3. Expand **Files & activity**. In **Your files**, click **Refresh**, download `hello-agent-computer.txt`, and open it.
 
 The sample page's **Save note** button only updates that page. The separate file
 creation is what produces the downloadable result. This small task checks browser
@@ -202,7 +216,8 @@ Then ask it to add a Miscellaneous input starting at 10 and check that the total
 becomes 120 with the other inputs set to 20, 40 and 50. Browser navigation accepts
 HTTP(S), so a local web server is needed instead of a `file://` URL. The server
 must remain a managed command; do not daemonize it or expose another public port.
-Human takeover can stop that managed server. Restart it from the client if needed.
+Ordinary typing or clicking leaves that managed server running. Explicit **Pause AI**
+or **Go private** can stop it; after resuming, restart it from the client if needed.
 
 These prompts are examples, not a promised model success rate. See the
 [verification record](validation.md) for the integration tests actually run.
@@ -213,15 +228,16 @@ These prompts are examples, not a promised model success rate. See the
 | --- | --- |
 | Docker command is missing or daemon unreachable | Install/start Docker and rerun `python3 scripts/doctor.py`. Do not weaken socket permissions to silence an error. |
 | Build or startup fails | Check free RAM/disk and the local `docker compose logs --tail=100 desktop`. The host must reach the dependency registries during build. |
-| Viewer loads but the screen is blank | Try **Reconnect screen**. Verify `/healthz` readiness and that your proxy forwards WebSockets. |
+| Viewer loads but the screen is blank | The screen retries automatically. If it stays disconnected, verify `/healthz` readiness, the hosting lifetime, and proxy WebSocket forwarding; sign in again if authorization expired. |
 | OAuth returns to localhost or the wrong domain | Correct `BRIDGE_PUBLIC_URL` to the exact HTTPS origin, with no `/mcp`, and recreate the container with `docker compose up -d`. |
 | HTTP viewer login or screen fails after HTTPS setup | Open the configured HTTPS origin; cookies and WebSocket origin checks use it. |
 | ChatGPT has no custom-app creation or write tools | Recheck account/workspace eligibility and permissions in OpenAI's linked guide. A reachable server cannot override them. |
 | `PERMISSION_REQUIRED` from a coding tool | The `safe` command policy may deny this operation. Stop the denied step, keep any existing result, and ask the owner to review the policy. Do not automatically retry in `trusted`/`dangerous` mode or disguise the command. |
 | `UNAUTHORIZED` or `INVALID_GRANT` | Check the endpoint is still running. Reconnect if refresh authorization expired, was revoked/replayed, or the service restarted. Old access-only connections need new client registration and approval for refresh support. Never use the owner token as a bearer token. |
 | `Unregistered client` after restart | Recreate the connection so the client registers again. |
-| `CONTROL_NOT_OWNED` | Click **Hand back to AI** in the viewer. Only the owner can release a pause/takeover; `session_start` cannot. Idle agent sessions pause after about 30 minutes. |
-| `STALE_OBSERVATION` | Take a new screenshot or browser snapshot before the next action. |
+| `CONTROL_NOT_OWNED` | If you explicitly paused or went private, click **Resume AI**. Only the owner can release those states; `session_start` cannot. Idle agent sessions pause after about 30 minutes. |
+| `HUMAN_INPUT_ACTIVE` | Let queued input finish and release held keys/buttons; the client should then take a fresh observation, not retry an old action. No handoff button is needed. |
+| `STALE_OBSERVATION` | Take a new screenshot or browser snapshot before the next action, including after owner input. |
 | `OUTCOME_UNKNOWN` | Inspect the actual page/file/external state before deciding what to do. Do not blindly resend the side effect with a new ID. |
 | `AMBIGUOUS_TARGET` | Refresh the browser snapshot and use an exact, unique accessible role/name, or inspect a screenshot. |
 | File is missing or download returns 413 | Verify it is under `/data/workspace`. Viewer downloads are limited to 20 MiB per file; copy larger files out with your host's Docker tools. |

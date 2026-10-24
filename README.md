@@ -4,7 +4,7 @@
 
 Want the computer-use side of [Muse](https://introducing.muse.ai/) or [dots](https://chatgpt.com/features/dots/) in your existing ChatGPT?
 
-Agent Computer is an open-source project that connects ChatGPT to a self-hosted Linux desktop. It gives ChatGPT a browser, terminal, and workspace files for concrete work: research a topic, run a script, or build and check a small web page. Watch the work happen and download the result. ChatGPT drives the tasks; this project provides the computer.
+Agent Computer is an open-source project that connects ChatGPT to a self-hosted Linux desktop. It gives ChatGPT a browser, terminal, and workspace files for concrete work: research a topic, run a script, or build and check a small web page. Watch the work, click or type directly on the same desktop, and download the result. ChatGPT drives the tasks; this project provides the computer.
 
 File editing, shell commands, and code execution are powered by **[Coding Tools MCP](https://github.com/xyTom/coding-tools-mcp), also built by xyTom**. One MCP connection brings those tools and the browser into the same workspace.
 
@@ -32,7 +32,7 @@ These are task ideas, not success-rate benchmarks. Start with public information
 ChatGPT → OAuth + MCP → Agent Computer
                        ├─ Linux desktop + Chromium
                        ├─ Coding Tools MCP → files, terminal, code
-                       └─ Web viewer → watch the desktop, download files
+                       └─ Web viewer → watch + use the desktop, download files
 ```
 
 You run the computer. ChatGPT supplies the model, plans the task, and calls its tools. The server provides the desktop and execution environment; it has no background model loop or scheduler. When the client stops calling tools, the server does not continue reasoning on its own.
@@ -112,23 +112,35 @@ Start with a small task that needs no external account:
 > the message on the page. Create hello-agent-computer.txt in the workspace with
 > the same sentence and read it back. Do not sign in to any external account.
 
-In the viewer, click **Refresh** under **Your files**, download
+In the viewer, expand **Files & activity**, click **Refresh** under **Your files**, and download
 `hello-agent-computer.txt`, and open it. You should see the browser interaction,
 the saved file and its verified contents. Then try the
 [build-and-revise tutorial](docs/quickstart.md#next-build-a-small-tool-and-revise-it)
 to create a budget calculator and check it in Chromium. The default `safe` command
 policy may deny shell operations; see the tutorial before attempting that extra step.
 
-## Stay in control
+## One shared computer
 
-- **Watch:** the default viewer is server-enforced read-only.
-- **Take control:** block new AI actions and take keyboard/mouse control after any in-flight action finishes.
-- **Private takeover:** also block model observations and tool access. Inspect the session before entering secrets; unmanaged background processes may still be running.
-- **Hand back to AI:** return control and require a fresh model observation.
-- **Pause AI / Stop:** block new AI actions and attempt to terminate tracked managed shell processes. Stop controls the session; it does not shut down Docker or undo external actions.
+Log in and the desktop opens first. Click or type whenever you need to; there is
+no **Take control / Hand back** cycle. Watching alone does not pause the AI.
+Setup, files/activity, and optional preferences/tasks are collapsed below the desktop.
+
+- **Use it directly:** owner input waits for the current AI action to finish, then runs between actions. Held keys or mouse buttons block new AI actions until released. The next AI action needs a fresh observation; the client handles this, not an owner mode switch.
+- **Pause AI:** explicitly block new AI actions and attempt to stop tracked managed shell processes. **Resume AI** releases that pause.
+- **Go private:** also block AI observations and tool access until you explicitly choose **Resume AI**. You can still use the desktop. Inspect running apps before entering secrets; unmanaged background processes may remain.
 - **Disconnect & revoke:** revoke all owner viewer sessions and OAuth grants.
 
-Writes use action receipts to avoid blindly replaying uncertain operations. Takeover cannot undo a submitted form, a completed purchase, or another external side effect. The connected client remains responsible for user approval.
+Ordinary clicking and typing do not cancel running commands. A long current action
+may delay your input; use **Pause AI** when you actually want work stopped. Shared
+input is serialized with bridge actions, not isolated from background apps or shell
+processes that can keep changing the desktop. Explicit pause/private cannot undo
+submitted forms, completed purchases or other external effects. Action receipts and
+fresh-observation checks remain in place; the client still handles user approval.
+The legacy read-only `/desktop/view` and explicit control APIs remain for compatible clients.
+
+The screen reconnects automatically after a transport interruption. This is not
+persistent hosting: Actions runs still expire, temporary tunnel URLs can change,
+and server restarts still end viewer/OAuth sessions and client registration.
 
 ## Keep your work
 
@@ -177,7 +189,7 @@ Need help or want to improve the project? Start with [contributing and support](
 - **[Coding Tools MCP by xyTom](https://github.com/xyTom/coding-tools-mcp):** files, shell, processes, and code editing through private stdio.
 - **Cua:** desktop screenshots, pointer, and keyboard control.
 - **Playwright:** structured browser actions in the same Chromium session.
-- **noVNC and x11vnc:** the live desktop viewer and server-enforced view-only channel.
+- **noVNC and x11vnc:** the live shared desktop and legacy server-enforced read-only channel.
 
 The project's source is [Apache-2.0](LICENSE). Dependencies retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md). This is an independent project with no OpenAI, Muse or Cua affiliation. The Muse/dots comparison describes the computer-use experience, not feature parity or endorsement.
 

@@ -21,11 +21,19 @@ sandbox for hostile code, a hardened personal-computer service or tenant isolati
   **Disconnect & revoke** clears every access/refresh grant, pending code and
   viewer session. The server supports one process; token state is not shared
   across workers and is never persisted to a database or workspace volume.
-- The viewer is read-only until the owner takes control. Private takeover blocks
-  model observations and tool access; the owner's viewer remains available.
-- Writes share one control lease and durable action receipts. Human takeover
-  blocks new actions, drains the current action and attempts to stop tracked
-  managed commands. Unknown outcomes require inspection before another attempt.
+- The authenticated owner can use the shared desktop directly. Its pixel stream
+  remains server-side read-only; a bounded parser routes actual input through the
+  same lock as tool writes, with an input-server acknowledgement before release.
+  Watching never transfers control. Held keys/buttons block agent input, and
+  every human input invalidates previous GUI observations and queued tool writes.
+- Private mode still blocks model observations and tool access; the owner's
+  viewer remains available. Explicit Pause/Private/Stop drain the current action
+  and attempt to stop tracked commands. Ordinary input does not kill commands.
+  AI cannot override an explicit pause or silently retry an unknown input result.
+- Tool writes retain durable action receipts. Unknown outcomes require inspection
+  before another attempt. Failed key/button cleanup blocks AI until the owner
+  resumes and a release-only recovery is acknowledged. Legacy read-only/control
+  endpoints retain their prior authorization checks.
 - Restart clears in-memory OAuth clients/grants and viewer sessions. Workspace,
   browser profile and action receipts persist on disk.
 

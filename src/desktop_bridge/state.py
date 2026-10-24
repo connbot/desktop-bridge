@@ -48,11 +48,15 @@ class Session:
         self.epoch = 0
         self.lock = asyncio.Lock()
         self.control_pending = False
+        self.human_input_pending = 0
+        self.human_holds: set[object] = set()
+        self.human_revision = 0
         self.observations: dict[str, Observation] = {}
         self.observation_ttl = observation_ttl
         self.last_activity = time.monotonic()
         self.events: list[dict[str, Any]] = []
         self.sockets: set = set()
+        self.shared_sockets: set = set()
 
     def status(self):
         return {
@@ -60,6 +64,8 @@ class Session:
             "state": self.mode.upper(),
             "epoch": self.epoch,
             "in_flight": self.lock.locked() or self.control_pending,
+            "human_input_pending": bool(self.human_input_pending),
+            "human_input_active": bool(self.human_input_pending or self.human_holds),
             "resolution": {"width": 1280, "height": 800},
             "capabilities": {
                 "memory_resume": False,
@@ -82,7 +88,7 @@ class Session:
         self.epoch += 1
         self.observations.clear()
         self.last_activity = time.monotonic()
-        for socket in list(self.sockets):
+        for socket in self.sockets - self.shared_sockets:
             try:
                 await socket.close(code=1008, reason="Control changed; reconnect")
             except Exception:
@@ -90,9 +96,36 @@ class Session:
         self.event("control", mode)
         return self.status()
 
+    @asynccontextmanager
+    async def human_input(self, source=None):
+        # Mark intent BEFORE waiting: queued agent calls must never jump ahead.
+        # This is an input turn, not a mode change or a cancellation of shell work.
+        self.human_input_pending += 1
+        self.human_revision += 1
+        self.epoch += 1
+        self.observations.clear()
+        try:
+            async with self.lock:
+                if source is not None and self.human_holds - {source}:
+                    raise BridgeError("HUMAN_INPUT_ACTIVE", "Finish input in the other viewer first")
+                yield
+        finally:
+            self.human_input_pending -= 1
+            self.epoch += 1
+            self.observations.clear()
+            self.last_activity = time.monotonic()
+
+    def require_input_idle(self):
+        if self.human_input_pending or self.human_holds:
+            raise BridgeError(
+                "HUMAN_INPUT_ACTIVE",
+                "Human input is in progress. Observe again after it finishes; do not replay a queued action.",
+            )
+
     def observe(self, *, browser_tab_id=None, browser_tab_ids=()):
         if self.mode == "private":
             raise BridgeError("PRIVATE_TAKEOVER", "Observation paused for private human takeover")
+        self.require_input_idle()
         now = time.monotonic()
         self.observations = {
             k: v for k, v in self.observations.items() if now - v.at <= self.observation_ttl
@@ -108,14 +141,21 @@ class Session:
     def require_agent(self):
         if self.mode != "agent":
             raise BridgeError("CONTROL_NOT_OWNED", f"Agent cannot act while session is {self.mode}")
+        self.require_input_idle()
 
     @asynccontextmanager
     async def action(self, action_id: str, payload: dict, observation_id: str | None = None):
         if not action_id or len(action_id) > 128:
             raise BridgeError("INVALID_ACTION_ID", "Use a unique action_id of 1–128 characters")
         fingerprint = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+        self.require_input_idle()
+        human_revision = self.human_revision
         async with self.lock:
             self.require_agent()
+            if human_revision != self.human_revision:
+                raise BridgeError(
+                    "CONTROL_CHANGED", "Human input superseded this queued action. Inspect before trying a new action."
+                )
             row = self.db.execute(
                 "SELECT fingerprint,state,result FROM receipts WHERE id=?", (action_id,)
             ).fetchone()

@@ -28,13 +28,32 @@ on private stdio, with a scrubbed environment and telemetry disabled. It sees
 
 ## Ownership
 
-An initial READY state allows session_start. Human pause, stop, and takeover
-cannot be overridden by session_start. Only the owner viewer can hand back.
-Every tool write holds the same asynchronous lock, rechecks ownership after
-queuing, and records an action receipt. Takeover revokes the lease immediately,
-then drains any in-flight operation and terminates tracked managed commands.
-No new human write connection is accepted until that drain completes. This
-cannot undo external side effects or guarantee termination of daemonized work.
+An initial READY state allows session_start. The owner opens one interactive
+shared desktop, without taking or handing back control. Watching and protocol
+traffic do not change ownership. Actual input immediately invalidates previous
+observations and queued tool writes, drains the current action, then uses the
+same asynchronous lock. Held keys and mouse buttons block new agent actions and
+observations until released. The agent must observe again before its next GUI
+action; no timer replays a stale click. Ordinary input does not kill builds or
+other managed commands.
+
+The shared viewer's pixel stream stays on read-only port 5901. A bounded RFB
+client parser routes only supported key, pointer and basic clipboard input to
+an auxiliary connection on port 5900. A raw framebuffer round trip on that
+connection acknowledges input processing before the lock is released. It does
+not promise that every application has finished reacting. Unknown protocol
+messages fail closed; extended clipboard paste and display resize are not
+supported in this route. Agent Unicode typing is unchanged. Reconnection
+releases held input, and an uncertain release blocks AI until an explicit resume
+successfully retries only the release, never the original action.
+
+Explicit Pause, Private and Stop retain the existing safety behavior: revoke
+immediately, drain in-flight work and attempt to stop tracked managed commands.
+Only the owner can resume them. Legacy human/control and read-only endpoints
+remain compatible, but are not the default UI workflow. Durable action receipts
+still prevent blind replay. Background shell programs can themselves affect the
+display outside the gateway; shared input is cooperative scheduling, not process
+isolation, and cannot undo external effects or terminate every daemonized task.
 
 Private mode blocks model observations too. The owner viewer remains visible.
 Untrusted browser text cannot authorize actions; the model/client still must
@@ -43,7 +62,8 @@ execution environment, not an adversarial multi-tenant security boundary.
 
 ## Reconnect and restart
 
-The viewer reconnects to the appropriate stream after control changes. A durable
+The viewer keeps the same shared stream through control changes and reconnects
+automatically after a transport disconnect. Authentication is still required. A durable
 SQLite receipt marks in-flight requests as unknown after a crash, preventing
 blind replay. File and profile persistence use one Docker volume. OAuth grants
 and owner sessions are memory-only and are invalid after restart. Refresh-capable

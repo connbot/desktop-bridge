@@ -3,7 +3,7 @@
 [English](quickstart.md) · [简体中文](quickstart.zh-CN.md) · [项目介绍](../README.md)
 
 **想让 ChatGPT 也像 Muse、Dots 那样操作电脑？** Agent Computer 把你自托管的
-Linux 桌面、Chromium、终端和文件接入 ChatGPT。你可以看着它操作、随时接管，
+Linux 桌面、Chromium、终端和文件接入 ChatGPT。你可以看着它操作，也能直接点击、输入，
 再把完成的文件下载下来。文件与代码工具由 [Coding Tools MCP](https://github.com/xyTom/coding-tools-mcp) 提供。
 
 模型、规划和任务推进由客户端负责。本项目提供电脑，没有内置模型循环或调度器；
@@ -64,8 +64,17 @@ python3 scripts/doctor.py --running
 不要发到聊天、Issue、源码或日志，也不要把它当作 MCP Bearer token。
 安装脚本首次创建私有 `.env`，再次运行不会覆盖已有配置。
 
-登录后应看到 Linux 桌面和 Chromium。默认只能观看。点击 **Take control** 并等待在途操作
-结束后，才能输入鼠标键盘。下一步前点 **Hand back to AI** 交还控制。
+登录后先看到 Linux 桌面和 Chromium，直接点击、输入即可，不需要“接管／交还”。
+只是观看不会暂停 AI。连接设置、文件与活动、可选偏好与任务都折叠在桌面下方。
+
+你的输入会等当前 AI 操作结束，再插入到操作之间；按住按键或鼠标按钮期间，新 AI 操作会被阻止。
+松开后，客户端重新截图或获取浏览器快照即可继续，不需要你手动恢复。普通点击、输入不会终止
+运行中的命令，也不隔离后台程序；后台应用或 shell 进程仍可能改变桌面。
+
+需要真正停止工作时点 **Pause AI**，阻止新 AI 操作并尝试停止受管理 shell 进程。
+**Go private** 还会阻止 AI 观察和工具访问，直到你明确点 **Resume AI**。此时你仍能操作桌面。
+输入秘密前先检查正在运行的应用；暂停或隐私模式都不能撤销已发生的外部动作，也不保证终止
+脱离管理的后台进程。
 
 ## 2. 分清本地地址和远程地址
 
@@ -123,6 +132,7 @@ python3 scripts/doctor.py --running
 观看页会话失效。服务重启还会清空客户端注册；若报 unregistered client，请重新创建连接。
 修改所有者密码须用新配置重新创建容器。刷新凭据不跨服务重启保存，也不会延长 GitHub Actions
 临时运行时长（默认 60 分钟）；Quick Tunnel 下次运行还可能换地址。观看页的独立登录仍最多 8 小时。
+画面自动重连只修复连接中断，不会延长托管或授权期限、保活已结束的预览，也不会重建客户端注册。
 
 刷新 token 只能用一次：客户端须保存每次响应中的新 token，并串行执行刷新。
 重复使用旧刷新 token（包括响应丢失后重试）会撤销该次授权下所有 token，必须重新连接；
@@ -137,8 +147,9 @@ python3 scripts/doctor.py --running
 
 在选择了 Agent Computer 的聊天中发送：
 
-> 请使用 Agent Computer。先检查会话状态；若为 READY 就开始 AI 控制，若我暂停或接管了，
-> 请让我手动交还。在电脑的浏览器里打开 http://127.0.0.1:8080/static/demo.html，
+> 请使用 Agent Computer。先检查会话状态；若为 READY 就开始 AI 控制。若我明确暂停或进入隐私模式，
+> 请让我点 Resume AI；普通输入结束后则重新观察，再继续，不要要求我交还控制。
+> 在电脑的浏览器里打开 http://127.0.0.1:8080/static/demo.html，
 > 在 Project note 填入“你好，Agent Computer”，点 Save note，再读取页面确认保存提示。
 > 在工作区创建 hello-agent-computer.txt，内容是同一句话，并读取文件验证。
 > 最后告诉我文件名。只使用这个本地示例页面，不登录外部账号。
@@ -147,7 +158,7 @@ python3 scripts/doctor.py --running
 
 1. 共享 Chromium 显示 acceptance lab 和 `Saved: 你好，Agent Computer`。
 2. 客户端确实读回了刚创建的文件。
-3. 在观看页 **Your files** 点 **Refresh**，下载 `hello-agent-computer.txt`，打开检查内容。
+3. 展开观看页 **Files & activity**，在 **Your files** 点 **Refresh**，下载 `hello-agent-computer.txt`，打开检查内容。
 
 页面里的 **Save note** 只更新页面显示；后面的单独创建文件才产生可下载结果。
 这一步能检查浏览器、文件工具和下载，不依赖外部网站。只有截图或一句“完成了”还不够。
@@ -167,8 +178,9 @@ python3 scripts/doctor.py --running
 
 再追加：“增加杂费一栏，初值 10。交通、餐饮、门票设为 20、40、50，检查合计是否为 120。”
 结构化浏览器只接受 HTTP(S)，因此需要本地静态服务器，不能直接用 `file://`。
-让服务器保持为受管理进程，不要后台脱离管理，也不用额外开放公网端口。接管可能停止这个进程，
-交还控制后可让客户端重新启动。这些是任务示例，模型的成功率没有保证；实际测试见 [验证记录](validation.md)。
+让服务器保持为受管理进程，不要后台脱离管理，也不用额外开放公网端口。普通点击、输入不会停止
+这个进程；明确选择 **Pause AI** 或 **Go private** 则可能停止它，恢复后可让客户端重新启动。
+这些是任务示例，模型的成功率没有保证；实际测试见 [验证记录](validation.md)。
 
 ## 常见问题
 
@@ -176,15 +188,16 @@ python3 scripts/doctor.py --running
 | --- | --- |
 | 找不到 Docker / daemon 不可用 | 安装并启动 Docker，重新运行 doctor。不要用放宽 socket 权限来掩盖问题。 |
 | 构建或启动失败 | 检查内存、磁盘和本地容器日志；构建需要能访问依赖源。 |
-| 观看页有了，但画面为空 | 点 **Reconnect screen**，检查就绪状态与代理的 WebSocket 转发。 |
+| 观看页有了，但画面为空 | 画面会自动重连。若持续断开，检查就绪状态、托管会话是否结束、代理的 WebSocket 转发；授权过期则重新登录。 |
 | OAuth 跳到 localhost / 错误域名 | 修正 `BRIDGE_PUBLIC_URL`，只写 HTTPS origin，运行 `docker compose up -d`。 |
 | 改成 HTTPS 后本地登录/画面失败 | 改用配置中的 HTTPS 观看地址；cookie 和 WebSocket 都检查该 origin。 |
 | ChatGPT 没有创建入口/写入工具 | 核对账号和工作区权限；服务可访问不代表账号有权限。 |
 | `PERMISSION_REQUIRED` | 默认 `safe` 策略可能拒绝该命令。停止这一步，保留现有结果，让所有者审阅权限。不要自动切换 `trusted`/`dangerous`，也不要改写命令绕过拒绝。 |
 | `UNAUTHORIZED` / `INVALID_GRANT` | 先确认服务仍在运行。刷新授权到期、撤销、重放或服务重启后需重连；旧版仅访问 token 的连接需重新注册客户端并批准一次才能获得刷新能力。不能把所有者密码作为 bearer token。 |
 | 重启后 `unregistered client` | 重新创建连接，重新注册客户端。 |
-| `CONTROL_NOT_OWNED` | 在观看页点 **Hand back to AI**。模型不能自行解除接管、暂停或停止；AI 空闲约 30 分钟也会暂停。 |
-| `STALE_OBSERVATION` | 重新截图/获取浏览器快照，再做下一步。 |
+| `CONTROL_NOT_OWNED` | 如果你明确暂停或进入隐私模式，点 **Resume AI**。模型不能自行解除这些状态；AI 空闲约 30 分钟也会暂停。 |
+| `HUMAN_INPUT_ACTIVE` | 等待排队输入完成、松开按键/鼠标按钮；客户端重新观察后继续，不要重放旧操作，也不需要点交还。 |
+| `STALE_OBSERVATION` | 重新截图/获取浏览器快照，再做下一步，包括你手动输入之后。 |
 | `OUTCOME_UNKNOWN` | 先检查页面、文件或外部状态；不能换个 action ID 就盲目重放可能已完成的操作。 |
 | `AMBIGUOUS_TARGET` | 刷新快照，使用唯一且完全匹配的 accessible role/name，或检查截图。 |
 | 文件找不到 / 下载 413 | 确认文件在 `/data/workspace`。观看页单文件下载上限 20 MiB；更大文件用宿主机 Docker 工具取出。 |
@@ -204,7 +217,7 @@ docker compose start
 当作排错命令，它会删除卷内数据。
 
 这是单一可信用户的环境，不是多租户强隔离。浏览器、网关与任意 shell 共用容器，
-Chromium 的内部 sandbox 未启用。Private takeover 阻止模型观察与工具访问，但不能撤销
+Chromium 的内部 sandbox 未启用。**Go private** 阻止模型观察与工具访问，但不能撤销
 已提交的外部动作，也不能保证终止脱离管理的后台进程。请先使用公开信息和测试数据，
 连接私人账号前阅读 [安全说明](../SECURITY.md)。
 

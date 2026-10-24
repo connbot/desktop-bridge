@@ -30,7 +30,7 @@ class Page:
             self.open = False
             self.closed += 1
         elif "mode:document" in source:
-            return {"mode": "HUMAN", "connected": "true", "probe": {"sends": self.sent}}
+            return {"mode": "Shared", "connected": "true", "probe": {"sends": self.sent}}
         else:
             return {"sends": self.sent, "connected": self.open}
 
@@ -66,7 +66,7 @@ def assert_valid_async_script(script):
     assert ".fill(" not in script and "sendKey(" not in script
 
 
-@pytest.mark.parametrize("channel", ["view", "control"])
+@pytest.mark.parametrize("channel", ["view", "shared"])
 async def test_probe_stays_open_until_read_only_gate_completes(channel, tmp_path):
     page = Page()
     entered, release = asyncio.Event(), asyncio.Event()
@@ -103,10 +103,10 @@ async def test_failed_probe_captures_fixture_diagnostics_and_always_closes(tmp_p
         return {"value": "VIEW_ONLY", "focused": True, "activeId": "note"}
 
     with pytest.raises(AssertionError, match="Fixture input did not arrive"):
-        await helper(page, observer, tmp_path)("control")
+        await helper(page, observer, tmp_path)("shared")
     assert not page.open and page.sent == 1 and page.closed == 1
-    diagnostic = json.loads((tmp_path / "input-control-diagnostic.json").read_text())
+    diagnostic = json.loads((tmp_path / "input-shared-diagnostic.json").read_text())
     assert diagnostic["desktop"]["value"] == "VIEW_ONLY"
     assert set(diagnostic) == {"channel", "error_class", "viewer", "desktop"}
-    assert (tmp_path / "input-control-viewer.png").exists()
-    assert (tmp_path / "input-control-desktop.png").exists()
+    assert (tmp_path / "input-shared-viewer.png").exists()
+    assert (tmp_path / "input-shared-desktop.png").exists()

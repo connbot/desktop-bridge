@@ -127,10 +127,14 @@ def create_app(config=None, providers=None, readiness_probe=None):
             # Template generation is asynchronous; read-only checks may be retried.
             for attempt in range(12):
                 try:
-                    op["commit"] = await p.verify_repository(op, token)
+                    op["commit"] = await p.verify_repository(op, token, s["github_token"])
                     break
                 except ProviderError as e:
-                    if e.code != "not_found" or attempt == 11:
+                    if (
+                        e.code not in {"not_found", "resource_conflict"}
+                        or e.uncertain
+                        or attempt == 11
+                    ):
                         raise
                     await asyncio.sleep(2)
             key = await p.public_key(op, token)
@@ -167,7 +171,7 @@ def create_app(config=None, providers=None, readiness_probe=None):
     async def launch(op, encrypted, s):
         try:
             token = await p.repository_token(op)
-            commit = await p.verify_repository(op, token)
+            commit = await p.verify_repository(op, token, s["github_token"])
             if commit != op["commit"]:
                 raise ProviderError("repository_version_changed")
             if op["mode"] == "named":
@@ -519,13 +523,18 @@ def create_app(config=None, providers=None, readiness_probe=None):
                         save(op)
                     if run.get("status") == "completed":
                         op.pop("origin", None)
+                        op.pop("failed_stage", None)
+                        op["uncertain"] = False
                         op["error"] = (
                             "run_failed"
                             if run.get("conclusion") not in {"success", "cancelled"}
                             else ""
                         )
                         save(op, "ended")
-                    elif op.get("expires_at", float("inf")) <= time.time():
+                    elif (
+                        op["stage"] != "stopping"
+                        and op.get("expires_at", float("inf")) <= time.time()
+                    ):
                         op.pop("origin", None)
                         save(op, "ending")
                     elif op["stage"] in {"interrupted", "checking_status"}:
@@ -571,6 +580,8 @@ def create_app(config=None, providers=None, readiness_probe=None):
                 "provider_unavailable",
                 "rate_limited",
             }
+            if op.get("failed_stage") == "checking_repository":
+                safe_errors.add("resource_conflict")
             if op["stage"] != "failed" or op.get("uncertain") or op.get("error") not in safe_errors:
                 raise ProviderError("invalid_request")
             if op["mode"] == "named" and not s.get("cloudflare_token"):
@@ -608,23 +619,58 @@ def create_app(config=None, providers=None, readiness_probe=None):
 
     @app.post("/api/operations/{op_id}/stop")
     async def stop(op_id: str, request: Request):
-        s, op = owned(request, op_id)
-        if not op.get("run_id") or op["stage"] in TERMINAL:
+        s, requested = owned(request, op_id)
+        if not requested.get("run_id") or requested["stage"] in TERMINAL:
             raise ProviderError("invalid_request")
         async with locks.setdefault(op_id, asyncio.Lock()):
             op = db.get(op_id, s["user"]["id"])
-            if op["stage"] in TERMINAL:
+            if op["stage"] in TERMINAL or op.get("run_id") != requested["run_id"]:
                 return public_op(op)
-            if op["stage"] != "stopping":
+            retrying = op["stage"] == "stopping"
+            if retrying and (
+                op.get("failed_stage") != "stopping"
+                or requested.get("failed_stage") != "stopping"
+                or requested["updated_at"] != op["updated_at"]
+            ):
+                return public_op(op)  # Pending or concurrent duplicate Stop, not a new retry.
+            op.pop("origin", None)
+            op.pop("failed_stage", None)
+            op["error"] = ""
+            save(op, "stopping")
+            try:
                 token = await p.repository_token(op)
-                save(op, "stopping")
-                op.pop("origin", None)
+                if retrying:
+                    # A lost cancellation response may already have stopped this exact run.
+                    run = await p.get_run(op, token)
+                    if (
+                        run.get("id") != op["run_id"]
+                        or run.get("head_sha") != op["commit"]
+                        or run.get("run_attempt") != 1
+                        or run.get("event") != "workflow_dispatch"
+                        or run.get("status") not in {
+                            "completed", "in_progress", "queued", "waiting", "requested", "pending"
+                        }
+                    ):
+                        raise ProviderError("invalid_run_identity")
+                    if run["status"] == "completed":
+                        op.update(
+                            uncertain=False,
+                            error="run_failed"
+                            if run.get("conclusion") not in {"success", "cancelled"}
+                            else "",
+                        )
+                        save(op, "ended")
+                        return public_op(op)
+                op["uncertain"] = False
+                await p.cancel(op, token)
                 save(op)
-                try:
-                    await p.cancel(op, token)
-                except ProviderError as e:
-                    op["error"] = e.code
-                    save(op)
+            except ProviderError as e:
+                op.update(
+                    error=e.code,
+                    uncertain=op.get("uncertain", False) or e.uncertain,
+                    failed_stage="stopping",
+                )
+                save(op)
         return public_op(op)
 
     @app.post("/api/run-events/{op_id}")
@@ -758,6 +804,7 @@ def create_app(config=None, providers=None, readiness_probe=None):
                 "permission_denied",
                 "actions_disabled",
                 "create_unknown",
+                "cancel_failed",
                 "hostname_taken",
                 "dispatch_unknown",
                 "launch_failed",

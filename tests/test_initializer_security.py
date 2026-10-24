@@ -514,6 +514,229 @@ async def test_retry_keeps_existing_repository():
         assert p.calls.count("create_repository") == 1
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status,failures", [(404, 1), (409, 1), (422, 1), (409, 12)])
+async def test_template_population_retry_is_bounded_and_never_recreates(status, failures):
+    attempts, sleeps = [], []
+    real_sleep = asyncio.sleep
+
+    async def no_delay(delay):
+        assert delay == 2
+        sleeps.append(delay)
+        await real_sleep(0)
+
+    def handler(request):
+        assert request.method == "GET", "Verification retries must not perform writes"
+        if request.url.path.endswith("/commits/main"):
+            attempts.append(request)
+            if len(attempts) <= failures:
+                return httpx.Response(status, json={"message": "Template still being copied"})
+            return httpx.Response(200, json={"sha": "a" * 40, "commit": {"tree": {"sha": "tree"}}})
+        if "/commits/" in request.url.path:
+            return httpx.Response(200, json={"commit": {"tree": {"sha": "tree"}}})
+        if request.url.path.endswith("/actions/workflows/preview.yml"):
+            return httpx.Response(200, json={"state": "active"})
+        return httpx.Response(200, json={"id": 123, "owner": {"id": 42}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        verifier = Providers(Config(), client=http)
+
+        class PopulationProvider(MockProviders):
+            async def verify_repository(self, op, token, user_token):
+                return await verifier.verify_repository(op, token, user_token)
+
+        p = PopulationProvider()
+        app = create_app(Config(mode="mock", database=":memory:"), providers=p)
+        async with client(app) as c:
+            h = await login(c)
+            await c.post("/api/auth/cloudflare", headers=h, json={})
+            body = {
+                "saved_password": True,
+                "accepted_preview": True,
+                "mode": "named",
+                "zone_id": "zone-1",
+            }
+            with patch("initializer.app.asyncio.sleep", no_delay):
+                result = await c.post("/api/operations", headers=h, json=body)
+                opid = result.json()["id"]
+                for _ in range(100):
+                    await real_sleep(0)
+                    op = app.state.store.get(opid)
+                    if op["stage"] in {"failed", "awaiting_password"}:
+                        break
+                assert op["stage"] == ("failed" if failures == 12 else "awaiting_password")
+                assert len(attempts) == min(failures + 1, 12)
+                assert len(sleeps) == min(failures, 11)
+                if failures == 12:
+                    assert op["failed_stage"] == "checking_repository"
+                    assert op["error"] == "resource_conflict" and not op["uncertain"]
+                    response = await c.post(f"/api/operations/{opid}/retry", headers=h, json={})
+                    assert response.status_code == 200
+                    for _ in range(100):
+                        await real_sleep(0)
+                        if app.state.store.get(opid)["stage"] == "awaiting_password":
+                            break
+            assert app.state.store.get(opid)["stage"] == "awaiting_password"
+            assert p.calls == [
+                "create_repository", "create_tunnel", "create_dns",
+                "write_secret:CLOUDFLARE_TUNNEL_TOKEN",
+            ]
+            assert len(app.state.store.all()) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("uncertain", [False, True])
+async def test_failed_stop_retries_only_after_explicit_request_and_exact_run_check(uncertain):
+    class FailedCancel(RunProvider):
+        async def get_run(self, op, token):
+            self.calls.append(("get_run", op["run_id"]))
+            return await super().get_run(op, token)
+
+        async def cancel(self, op, token):
+            self.calls.append(("cancel", op["run_id"]))
+            if self.calls.count(("cancel", 987)) == 1:
+                raise ProviderError("provider_unavailable", uncertain=uncertain)
+            self.runs[op["run_id"]].update(status="completed", conclusion="cancelled")
+
+    p = FailedCancel()
+    app, c, h = await fixture_run(p)
+    op = app.state.store.get("op1")
+    op.update(
+        stage="ready", origin="https://fictional-preview.trycloudflare.com",
+        expires_at=time.time() - 1,
+    )
+    app.state.store.save(op)
+    async with aclosing(c):
+        failed = (await c.post("/api/operations/op1/stop", headers=h, json={})).json()
+        assert failed["stage"] == failed["failed_stage"] == "stopping"
+        assert failed["uncertain"] is uncertain
+        assert "origin" not in failed
+        assert p.calls == [("cancel", 987)]
+        polled = (await c.get("/api/operations/op1")).json()
+        assert polled["stage"] == polled["failed_stage"] == "stopping"
+        assert p.calls == [("cancel", 987), ("get_run", 987)]
+        retried = (await c.post("/api/operations/op1/stop", headers=h, json={})).json()
+        assert retried["stage"] == "stopping" and not retried["uncertain"]
+        assert not retried["error"] and "failed_stage" not in retried
+        assert p.calls[-2:] == [("get_run", 987), ("cancel", 987)]
+        calls = list(p.calls)
+        await c.post("/api/operations/op1/stop", headers=h, json={})
+        assert p.calls == calls, "Accepted cancellation must not be resubmitted"
+        ended = (await c.get("/api/operations/op1")).json()
+        assert ended["stage"] == "ended" and "origin" not in ended
+        assert all(call[0] in {"get_run", "cancel"} for call in p.calls)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("explicit_retry", [False, True])
+async def test_uncertain_stop_that_finished_is_reconciled_without_another_cancel(explicit_retry):
+    class LostCancelResponse(RunProvider):
+        async def cancel(self, op, token):
+            await super().cancel(op, token)
+            raise ProviderError("provider_unavailable", uncertain=True)
+
+    p = LostCancelResponse()
+    app, c, h = await fixture_run(p)
+    async with aclosing(c):
+        first = (await c.post("/api/operations/op1/stop", headers=h, json={})).json()
+        assert first["uncertain"]
+        second = (
+            await c.post("/api/operations/op1/stop", headers=h, json={})
+            if explicit_retry else await c.get("/api/operations/op1")
+        ).json()
+        assert second["stage"] == "ended" and not second["uncertain"]
+        assert not second["error"] and "failed_stage" not in second
+        assert p.calls == ["cancel"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"id": 988}, {"head_sha": "b" * 40}, {"run_attempt": 2},
+        {"event": "push"}, {"status": "unexpected"}, "read_failed",
+    ],
+)
+async def test_stop_retry_cannot_cancel_without_exact_run_reconciliation(change):
+    class FailedReconciliation(RunProvider):
+        async def get_run(self, op, token):
+            if change == "read_failed":
+                raise ProviderError("provider_unavailable")
+            return {**await super().get_run(op, token), **change}
+
+    p = FailedReconciliation()
+    app, c, h = await fixture_run(p)
+    op = app.state.store.get("op1")
+    op.update(stage="stopping", failed_stage="stopping", error="provider_unavailable", uncertain=True)
+    app.state.store.save(op)
+    async with aclosing(c):
+        result = (await c.post("/api/operations/op1/stop", headers=h, json={})).json()
+        assert result["stage"] == result["failed_stage"] == "stopping"
+        assert result["uncertain"] and "origin" not in result
+        assert result["error"] == (
+            "provider_unavailable" if change == "read_failed" else "invalid_run_identity"
+        )
+        assert p.calls == []
+
+
+@pytest.mark.asyncio
+async def test_concurrent_duplicate_stops_do_not_retry_a_failed_cancel():
+    class SlowCancel(RunProvider):
+        async def cancel(self, op, token):
+            self.calls.append("cancel")
+            self.entered.set()
+            await self.release.wait()
+            raise ProviderError("provider_unavailable", uncertain=True)
+
+    p = SlowCancel()
+    app, c, h = await fixture_run(p)
+    async with aclosing(c):
+        for expected_count in (1, 2):
+            p.entered.clear()
+            p.release.clear()
+            first = asyncio.create_task(c.post("/api/operations/op1/stop", headers=h, json={}))
+            await asyncio.wait_for(p.entered.wait(), 1)
+            duplicate = asyncio.create_task(c.post("/api/operations/op1/stop", headers=h, json={}))
+            await asyncio.sleep(0.03)
+            p.release.set()
+            responses = await asyncio.gather(first, duplicate)
+            assert all(r.status_code == 200 for r in responses)
+            assert p.calls == ["cancel"] * expected_count
+            assert app.state.store.get("op1")["failed_stage"] == "stopping"
+
+
+@pytest.mark.asyncio
+async def test_duplicate_stop_retries_queued_behind_status_share_one_attempt():
+    class QueuedRetries(RunProvider):
+        async def get_run(self, op, token):
+            if self.block_probe:
+                self.block_probe = False
+                self.entered.set()
+                await self.release.wait()
+            return await super().get_run(op, token)
+
+        async def cancel(self, op, token):
+            self.calls.append("cancel")
+            raise ProviderError("provider_unavailable", uncertain=True)
+
+    p = QueuedRetries()
+    app, c, h = await fixture_run(p)
+    async with aclosing(c):
+        await c.post("/api/operations/op1/stop", headers=h, json={})
+        p.block_probe = True
+        status = asyncio.create_task(c.get("/api/operations/op1"))
+        await asyncio.wait_for(p.entered.wait(), 1)
+        retries = [
+            asyncio.create_task(c.post("/api/operations/op1/stop", headers=h, json={}))
+            for _ in range(2)
+        ]
+        await asyncio.sleep(0.03)
+        p.release.set()
+        responses = await asyncio.gather(status, *retries)
+        assert all(r.status_code == 200 for r in responses)
+        assert p.calls == ["cancel", "cancel"]
+
+
 def test_sealed_box_roundtrip_contains_no_plaintext():
     key = PrivateKey.generate()
     value = "FICTIONAL-TEST-OWNER-" + "x" * 43

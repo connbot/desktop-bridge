@@ -2,6 +2,7 @@
 
 import base64
 import hashlib
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
@@ -170,10 +171,21 @@ def test_revocation_and_new_process_never_restore_renewable_grant(auth):
             refresh(restarted, client_id, tokens["refresh_token"])
 
 
-def test_duplicate_concurrent_refresh_cannot_create_two_live_successors(auth):
+def test_duplicate_concurrent_refresh_cannot_create_two_live_successors(auth, monkeypatch):
     client_id, tokens = issue(auth)
+    start = threading.Barrier(2)
+    original = auth_module.secrets.token_urlsafe
+
+    def slow_token_urlsafe(*args, **kwargs):
+        # Expose the current-refresh check-to-write window if exchange loses its
+        # lock. Starting two threads alone also permits a sequential replay.
+        time.sleep(0.05)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(auth_module, "secrets", SimpleNamespace(token_urlsafe=slow_token_urlsafe))
 
     def attempt():
+        start.wait(timeout=5)
         try:
             return refresh(auth, client_id, tokens["refresh_token"])
         except BridgeError as error:

@@ -65,7 +65,20 @@ async function main(){
   click('copy-mcp');await sleep(20);assert.equal(dom.window.testCopied,$('mcp-url').value);
   saveStorage();await load();await wait(()=>$('mcp-url').value.endsWith('/mcp'),'ready survives refresh');
   assert.equal((await api('/api/session')).operation.id,op1.id,'Refresh preserves operation ID');
-  click('stop-preview');await wait(()=>$('progress-title').textContent==='这次预览已结束','cancel reaches terminal');
+  await api('/api/mock/scenario',{scenario:'cancel_failed'});
+  click('stop-preview');await wait(()=>!$('stop-pending').hidden && $('stop-pending').textContent==='重试停止电脑','failed cancel exposes explicit retry');
+  assert.equal($('stop-pending').textContent,'重试停止电脑');
+  assert(dom.window.document.querySelector('[data-view="4"]').hidden,'Failed stop never restores the connection entry');
+  assert.match($('progress-description').textContent,/先核对这一次运行/);
+  inspect=await api('/api/mock/inspect',{});assert.equal(inspect.calls.filter(x=>x==='cancel').length,1);
+  click('check-status');await sleep(100);
+  assert.deepEqual((await api('/api/mock/inspect',{})).calls,inspect.calls,'Stop status checks never retry cancellation');
+  saveStorage();await load();await wait(()=>!$('stop-pending').hidden,'stop retry survives refresh');
+  await api('/api/mock/scenario',{scenario:'success'});
+  click('stop-pending');$('stop-pending').click();
+  await wait(()=>$('progress-title').textContent==='这次预览已结束','explicit cancel retry reaches terminal');
+  assert($('stop-pending').hidden);
+  inspect=await api('/api/mock/inspect',{});assert.equal(inspect.calls.filter(x=>x==='cancel').length,2,'Retry double-click submits once');
   click('restart-preview');await wait(()=>$('mcp-url').value.endsWith('/mcp') && !dom.window.document.querySelector('[data-view="4"]').hidden,'explicit restart');
   inspect=await api('/api/mock/inspect',{});assert.equal(inspect.calls.filter(x=>x==='create_repository').length,1);assert.equal(inspect.calls.filter(x=>x==='dispatch').length,2);
   // Cloudflare account without an active zone has a clear escape hatch.
@@ -87,6 +100,6 @@ async function main(){
   await wait(()=>!$('retry-step').hidden,'known failure retry');await api('/api/mock/scenario',{scenario:'success'});click('retry-step');
   await wait(()=>$('mcp-url').value.endsWith('/mcp'),'explicit retry succeeds');
   assert.deepEqual(errors,[],'No script errors');
-  dom.window.close();console.log(JSON.stringify({passed:true,checks:18,live_providers:false,browser_engine:'jsdom (not visual browser QA)',scenarios:['download confirmation gate','Web Crypto CSPRNG (Node test adapter)','browser libsodium to real Python SealedBox','double-click single operation/run','back retains password','regeneration resets confirmation','refresh retains op ID','copy endpoint','cancel terminal','explicit restart no new repo','no active zone fallback','GitHub state retained','unknown write stops','no blind retry','explicit known-failure retry']}));
+  dom.window.close();console.log(JSON.stringify({passed:true,checks:22,live_providers:false,browser_engine:'jsdom (not visual browser QA)',scenarios:['download confirmation gate','Web Crypto CSPRNG (Node test adapter)','browser libsodium to real Python SealedBox','double-click single operation/run','back retains password','regeneration resets confirmation','refresh retains op ID','copy endpoint','failed stop exposes retry','stop retry survives refresh','status never retries cancellation','retry double-click submits once','cancel terminal','explicit restart no new repo','no active zone fallback','GitHub state retained','unknown write stops','no blind retry','explicit known-failure retry']}));
 }
 main().catch(e=>{console.error(e);if(dom)dom.window.close();process.exitCode=1;});

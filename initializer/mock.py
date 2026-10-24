@@ -39,7 +39,7 @@ class MockProviders:
     async def repository_token(self, op):
         return "mock-repository-token"
 
-    async def verify_repository(self, op, token):
+    async def verify_repository(self, op, token, user_token):
         if self.scenario == "actions_disabled":
             raise ProviderError("actions_disabled")
         return "a" * 40
@@ -105,5 +105,7 @@ class MockProviders:
 
     async def cancel(self, op, token):
         self.calls.append("cancel")
+        if self.scenario == "cancel_failed":
+            raise ProviderError("provider_unavailable", uncertain=True)
         self.runs[op["run_id"]]["status"] = "completed"
         self.runs[op["run_id"]]["conclusion"] = "cancelled"

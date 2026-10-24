@@ -127,7 +127,9 @@
   }
   function renderOperation() {
     resources();
-    $('stop-pending').hidden=!op.run_id || terminal.has(op.stage) || ['stopping','ending'].includes(op.stage);
+    const retryStop=op.stage==='stopping' && op.failed_stage==='stopping';
+    $('stop-pending').hidden=!op.run_id || terminal.has(op.stage) || op.stage==='ending' || (op.stage==='stopping' && !retryStop);
+    $('stop-pending').textContent=retryStop?'重试停止电脑':'停止这次预览';
     if (op.stage === 'ready') { renderReady(); if (step !== 4) show(4); return; }
     if (step === 4) show(3);
     const n = op.stage==='ended' && !op.last_seen ? 4 : (phaseFor[op.stage] ?? phaseFor[op.failed_stage] ?? -1);
@@ -144,7 +146,7 @@
     });
     if (!terminal.has(op.stage) && !op.error) { $('progress-title').textContent='让配置自己完成'; $('progress-description').textContent='保持这个页面打开。当前进度来自服务端，完成检查后会显示连接地址。'; }
     const bad = terminal.has(op.stage) || Boolean(op.error);
-    $('retry-step').hidden = op.stage !== 'failed' || op.uncertain || !['template_not_enabled','template_version_changed','permission_denied','authorization_expired','actions_disabled','installation_permissions_missing','not_found','provider_unavailable','rate_limited'].includes(op.error);
+    $('retry-step').hidden = op.stage !== 'failed' || op.uncertain || (!['template_not_enabled','template_version_changed','permission_denied','authorization_expired','actions_disabled','installation_permissions_missing','not_found','provider_unavailable','rate_limited'].includes(op.error) && !(op.error==='resource_conflict' && op.failed_stage==='checking_repository'));
     $('restart-preview').hidden = op.stage !== 'ended' || !op.secret_written;
     $('recovery').hidden = !bad && !(op.stage === 'awaiting_password' && !password);
     $('recover-password').hidden = op.stage !== 'awaiting_password';
@@ -157,7 +159,7 @@
       $('check-status').textContent='检查运行记录';
     } else if (['stopping','ending'].includes(op.stage)) {
       $('progress-title').textContent='正在结束预览';
-      $('progress-description').textContent='已隐藏连接入口。等待 GitHub 确认电脑停止，请不要再次启动。';
+      $('progress-description').textContent=retryStop?'停止请求未能确认完成。可以重试停止；我们会先核对这一次运行，不会再次启动电脑。':'已隐藏连接入口。等待 GitHub 确认电脑停止，请不要再次启动。';
     } else if (op.stage === 'unknown') {
       $('progress-title').textContent='还不能确认这一步的结果';
       $('progress-description').textContent='请求可能已被服务接收。为避免重复创建或启动，向导已暂停。请先检查下面的资源和 Actions 记录。';

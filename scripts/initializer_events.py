@@ -10,8 +10,6 @@ import os
 import re
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-import httpx
-
 
 def report_config(env):
     operation = env.get("INITIALIZER_OPERATION", "")
@@ -72,6 +70,9 @@ def report(event, sequence, *, origin="", expires_at=0, env=None, client=None):
         return False
     if event not in {"ready", "ending"}:
         raise ValueError("Unexpected initializer event")
+    # Configuration checks run before third-party dependencies are installed.
+    import httpx
+
     target, operation = config
     owns_client = client is None
     client = client or httpx.Client(timeout=12, follow_redirects=False)

@@ -199,14 +199,18 @@ class Providers:
             "branch": result["default_branch"],
         }
 
-    async def verify_repository(self, op, token):
+    async def verify_repository(self, op, token, user_token):
+        if not user_token:
+            raise ProviderError("authorization_expired")
         path = f"/repos/{op['owner_login']}/{op['repo_name']}"
         meta = await self.gh("GET", path, token)
         if meta["id"] != op["repo_id"] or meta["owner"]["id"] != op["owner_id"]:
             raise ProviderError("repository_owner_mismatch")
         head = await self.gh("GET", path + "/commits/" + segment(op["branch"]), token)
+        # Use the same user authorization as template generation. The installation
+        # token is deliberately scoped to the generated repository, not the template.
         source = await self.gh(
-            "GET", f"/repos/{self.config.template}/commits/{self.config.template_sha}"
+            "GET", f"/repos/{self.config.template}/commits/{self.config.template_sha}", user_token
         )
         if head["commit"]["tree"]["sha"] != source["commit"]["tree"]["sha"]:
             raise ProviderError("repository_version_changed")
@@ -233,6 +237,7 @@ class Providers:
     async def dispatch(self, op, token):
         path = self.repo_path(op) + "/actions/workflows/preview.yml"
         await self.gh("PUT", path + "/enable", token)
+        # API 2026-03-10 always returns run details and removed return_run_details.
         result = await self.gh(
             "POST",
             path + "/dispatches",

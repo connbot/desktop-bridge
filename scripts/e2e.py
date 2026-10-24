@@ -35,6 +35,31 @@ def unpack(result):
         return {"text": "\n".join(texts)}
 
 
+async def assert_viewer_fits(page, *, fullscreen=False):
+    # Page-level scrollWidth misses overflow hidden by the desktop card. Check
+    # the actual noVNC canvas and both enclosing boxes after its resize settles.
+    await page.wait_for_function(
+        """fullscreen => {
+            const screen = document.querySelector('#screen');
+            const canvas = screen?.querySelector('canvas');
+            if (!canvas || canvas.width !== 1280 || canvas.height !== 800) return false;
+            const shell = document.querySelector('#screen-shell').getBoundingClientRect();
+            const view = screen.getBoundingClientRect(), image = canvas.getBoundingClientRect();
+            const contains = (outer, inner) => inner.left >= outer.left - 1 &&
+                inner.top >= outer.top - 1 && inner.right <= outer.right + 1 &&
+                inner.bottom <= outer.bottom + 1;
+            return image.width > 0 && image.height > 0 &&
+                contains(shell, view) && contains(view, image) &&
+                view.left >= -1 && view.right <= window.innerWidth + 1 &&
+                Math.abs(image.width * canvas.height / canvas.width - image.height) <= 1 &&
+                (!fullscreen || (Math.abs(view.width - window.innerWidth) <= 1 &&
+                    Math.abs(view.height - window.innerHeight) <= 1));
+        }""",
+        arg=fullscreen,
+        timeout=10000,
+    )
+
+
 async def headed_fixture(script):
     """Test-only external input, without advancing the bridge observation epoch.
 
@@ -176,8 +201,24 @@ async def run(restart):
                     assert unpack(await call("browser_snapshot"))["title"] == "Agent Computer · Acceptance lab"
                     results.append("Structured Playwright operates visible headed Chromium")
                     await browser({"kind": "click", "role": "textbox", "name": "Project note"})
-                    await gui({"kind": "type", "text": "你好，Agent Computer!\nUTF-8 ✓"})
+                    typed_note = "你好，Agent Computer!\nUTF-8 ✓"
+                    await gui({"kind": "type", "text": typed_note})
+                    # VNC key-event submission does not mean Chromium has consumed the
+                    # clipboard. Observe the exact value before another protocol
+                    # moves focus to Save. Never retry the type or fill the field.
+                    await headed_fixture(f"""
+                        from playwright.async_api import expect
+                        pages = [page for page in context.pages if page.url == {URL + "/static/demo.html"!r}]
+                        assert len(pages) == 1
+                        await expect(pages[0].get_by_role('textbox', name='Project note', exact=True)).to_have_value({typed_note!r}, timeout=5000)
+                    """)
                     await browser({"kind": "click", "role": "button", "name": "Save note"})
+                    saved_note = await headed_fixture(f"""
+                        pages = [page for page in context.pages if page.url == {URL + "/static/demo.html"!r}]
+                        assert len(pages) == 1
+                        print(json.dumps(await pages[0].get_by_role('status').text_content()))
+                    """)
+                    assert saved_note == "Saved: " + typed_note, saved_note
                     snap = unpack(await call("browser_snapshot"))
                     assert "你好，Agent Computer!" in snap["snapshot"], snap
                     results.append("Real Cua keyboard paste handles Chinese, newline and symbols")
@@ -453,6 +494,11 @@ async def run(restart):
                         page = await browser_ui.new_page(viewport={"width": 1440, "height": 1000})
                         errors = []
                         page.on("pageerror", lambda e: errors.append(str(e)))
+                        # Capture only this disposable viewer's shared transports so
+                        # the test can simulate loss without a production reconnect UI.
+                        await page.add_init_script(
+                            path=Path(__file__).with_name("capture-shared-sockets.js")
+                        )
                         # Exercise the actual browser approval journey, starting logged out.
                         ui_client = (
                             await http.post(
@@ -479,7 +525,7 @@ async def run(restart):
                         await page.goto(URL + "/authorize?" + urlencode(ui_params))
                         await page.screenshot(path=str(OUT / "login.png"), full_page=True)
                         await page.get_by_label("Owner access token").fill(OWNER)
-                        await page.get_by_role("button", name="Open workspace").click()
+                        await page.get_by_role("button", name="Open computer").click()
                         await page.get_by_role("button", name="Approve for one hour").click()
                         await page.wait_for_url("http://127.0.0.1:43111/callback**")
                         ui_code = parse_qs(urlsplit(page.url).query)["code"][0]
@@ -497,18 +543,22 @@ async def run(restart):
                         results.append(
                             "Browser OAuth onboarding: login, explicit approval and bound token exchange"
                         )
+                        before_view = unpack(await call("session_status"))
+                        assert before_view["state"] == "AGENT"
                         await page.goto(URL)
-                        await page.locator("#screen canvas").wait_for(timeout=20000)
-                        await page.get_by_role("button", name="Take control", exact=True).click()
-                        await page.locator("#status").filter(has_text="HUMAN").wait_for()
-                        await page.get_by_role("button", name="Hand back to AI").click()
-                        await page.locator("#status").filter(has_text="AGENT").wait_for()
-                        await page.get_by_role("button", name="Pause AI").click()
-                        await page.locator("#status").filter(has_text="PAUSED").wait_for()
-                        await page.get_by_role("button", name="Hand back to AI").click()
-                        await page.locator("#status").filter(has_text="AGENT").wait_for()
+                        await page.locator('#screen[data-connected="true"] canvas').wait_for(timeout=20000)
+                        assert await page.evaluate("window.__sharedSockets.length") == 1
+                        after_view = unpack(await call("session_status"))
+                        assert after_view["state"] == "AGENT"
+                        assert after_view["epoch"] == before_view["epoch"]
+                        assert await page.locator("details[open]").count() == 0
+                        assert await page.get_by_role("button", name="Take control", exact=True).count() == 0
+                        assert await page.get_by_role("button", name="Hand back to AI", exact=True).count() == 0
+                        await page.locator("#workspace-details > summary").click()
                         await page.get_by_role("button", name="Refresh", exact=True).click()
                         await page.get_by_role("link", name="acceptance.txt").wait_for()
+                        await page.locator("#workspace-details > summary").click()
+                        results.append("Desktop opens first on shared input; watching does not change state or epoch")
                         # Canvas existence alone is not proof of a working screen.
                         await page.wait_for_function(
                             """() => {
@@ -534,36 +584,143 @@ async def run(restart):
                         await browser({"kind": "click", "role": "textbox", "name": "Project note"})
 
                         async def inject(channel):
-                            await page.evaluate(
-                                """async (channel) => {
-                              const {default:RFB}=await import('/novnc/core/rfb.js');
-                              const node=document.createElement('div');document.body.append(node);
-                              await new Promise((resolve,reject)=>{
-                                const r=new RFB(node,`ws://${location.host}/desktop/${channel}`);
-                                r.viewOnly=false;
-                                const timer=setTimeout(()=>{r.disconnect();reject(new Error('VNC handshake timeout'));},5000);
-                                r.addEventListener('connect',()=>{
-                                  r.sendKey(0x7a,'KeyZ');
-                                  setTimeout(()=>{clearTimeout(timer);r.disconnect();node.remove();resolve();},300);
-                                });
-                              });
-                            }""",
-                                channel,
-                            )
+                            # Keep the probe alive until application-level evidence,
+                            # not a fixed disconnect delay. Exactly one key is sent.
+                            assert channel in {"view", "shared"}
+                            try:
+                                await page.evaluate(
+                                    """async (channel) => {
+                                      const {default:RFB}=await import('/novnc/core/rfb.js');
+                                      const node=document.createElement('div');document.body.append(node);
+                                      const r=new RFB(node,`ws://${location.host}/desktop/${channel}`);
+                                      r.viewOnly=false;
+                                      const state={channel,connected:false,sends:0,events:[]};
+                                      const record=event=>state.events.push({event,at:performance.now()});
+                                      window.__acceptanceInputProbe={state,close:()=>{r.disconnect();node.remove();}};
+                                      await new Promise((resolve,reject)=>{
+                                        const timer=setTimeout(()=>{
+                                          record('handshake-timeout');r.disconnect();
+                                          reject(new Error('VNC handshake timeout'));
+                                        },5000);
+                                        r.addEventListener('disconnect',()=>{
+                                          state.connected=false;record('disconnect');
+                                          clearTimeout(timer);reject(new Error('VNC disconnected'));
+                                        });
+                                        r.addEventListener('securityfailure',()=>{
+                                          record('securityfailure');clearTimeout(timer);
+                                          reject(new Error('VNC security failure'));
+                                        });
+                                        r.addEventListener('connect',()=>{
+                                          clearTimeout(timer);state.connected=true;record('connect');
+                                          r.sendKey(0x7a,'KeyZ');state.sends++;record('key-submitted');
+                                          resolve();
+                                        },{once:true});
+                                      });
+                                    }""",
+                                    channel,
+                                )
+                                if channel == "view":
+                                    # Negative security assertion: the entire value
+                                    # must stay unchanged throughout the live probe.
+                                    await headed_fixture(f"""
+                                        import time
+                                        pages = [p for p in context.pages if p.url == {URL + "/static/demo.html"!r}]
+                                        assert len(pages) == 1
+                                        note = pages[0].get_by_role('textbox', name='Project note', exact=True)
+                                        until = time.monotonic() + 1.0
+                                        while time.monotonic() < until:
+                                            actual = await note.input_value()
+                                            assert actual == 'VIEW_ONLY', actual
+                                            await asyncio.sleep(0.05)
+                                        assert await note.input_value() == 'VIEW_ONLY'
+                                    """)
+                                else:
+                                    await headed_fixture(f"""
+                                        from playwright.async_api import expect
+                                        pages = [p for p in context.pages if p.url == {URL + "/static/demo.html"!r}]
+                                        assert len(pages) == 1
+                                        await expect(pages[0].get_by_role('textbox', name='Project note', exact=True)).to_have_value('VIEW_ONLYz', timeout=10000)
+                                    """)
+                                state = await page.evaluate("() => window.__acceptanceInputProbe.state")
+                                assert state["sends"] == 1 and state["connected"], state
+                            except Exception as error:
+                                # Only this disposable fixture's value/focus and
+                                # connection events are recorded, never credentials.
+                                diagnostic = {"channel": channel, "error_class": type(error).__name__}
+                                try:
+                                    diagnostic["viewer"] = await page.evaluate("""() => ({
+                                        mode:document.querySelector('#status').textContent,
+                                        connected:document.querySelector('#screen').dataset.connected,
+                                        probe:window.__acceptanceInputProbe?.state || null
+                                    })""")
+                                    read_state = """() => {
+                                        const note=document.querySelector('#note');
+                                        const active=document.activeElement;
+                                        return {value:note.value,focused:document.hasFocus(),
+                                            activeTag:active?.tagName,activeId:active?.id,
+                                            selectionStart:note.selectionStart,selectionEnd:note.selectionEnd};
+                                    }"""
+                                    diagnostic["desktop"] = await headed_fixture(f"""
+                                        pages = [p for p in context.pages if p.url == {URL + "/static/demo.html"!r}]
+                                        assert len(pages) == 1
+                                        print(json.dumps(await pages[0].evaluate({read_state!r})))
+                                    """)
+                                    await page.screenshot(path=str(OUT / f"input-{channel}-viewer.png"), full_page=True)
+                                    _, png = await observe()
+                                    (OUT / f"input-{channel}-desktop.png").write_bytes(png)
+                                except Exception as capture_error:
+                                    diagnostic["capture_error_class"] = type(capture_error).__name__
+                                (OUT / f"input-{channel}-diagnostic.json").write_text(
+                                    json.dumps(diagnostic, ensure_ascii=False, indent=2)
+                                )
+                                raise
+                            finally:
+                                await page.evaluate("""() => {
+                                    window.__acceptanceInputProbe?.close();
+                                    delete window.__acceptanceInputProbe;
+                                }""")
 
                         await inject("view")
                         snap = unpack(await call("browser_snapshot"))
                         assert "VIEW_ONLYz" not in snap["snapshot"], snap
-                        await page.get_by_role("button", name="Take control", exact=True).click()
-                        await page.locator("#status").filter(has_text="HUMAN").wait_for()
-                        await inject("control")
-                        snap = unpack(await call("browser_snapshot"))
-                        assert "VIEW_ONLYz" in snap["snapshot"], snap
-                        await page.get_by_role("button", name="Hand back to AI").click()
-                        await page.locator("#status").filter(has_text="AGENT").wait_for()
-                        await page.locator('#screen[data-connected="true"]').wait_for()
+                        background_command = await call("coding_exec_command", {
+                            "cmd": "sleep 30", "yield_time_ms": 0,
+                            "bridge_action_id": "shared-input-managed-sleep",
+                        })
+                        assert background_command.structuredContent["status"] == "running"
+                        before_input = unpack(await call("browser_snapshot"))
+                        await inject("shared")
+                        deadline = asyncio.get_running_loop().time() + 10
+                        while True:
+                            shared_state = unpack(await call("session_status"))
+                            if not shared_state["human_input_active"]:
+                                break
+                            assert asyncio.get_running_loop().time() < deadline, shared_state
+                            await asyncio.sleep(0.05)
+                        assert shared_state["state"] == "AGENT"
+                        stale = await call("browser_action", {
+                            "action": {"kind": "fill", "role": "textbox", "name": "Project note", "text": "STALE-WRITE"},
+                            "observation_id": before_input["observation_id"], "action_id": str(uuid.uuid4()),
+                        }, True)
+                        assert stale.isError and "STALE_OBSERVATION" in str(stale), stale
+                        fresh = unpack(await call("browser_snapshot"))
+                        assert "VIEW_ONLYz" in fresh["snapshot"], fresh
+                        await call("browser_action", {
+                            "action": {"kind": "fill", "role": "textbox", "name": "Project note", "text": "SHARED-RESUMED"},
+                            "observation_id": fresh["observation_id"], "action_id": str(uuid.uuid4()),
+                        })
+                        await headed_fixture(f"""
+                            from playwright.async_api import expect
+                            page = next(p for p in context.pages if p.url == {URL + "/static/demo.html"!r})
+                            await expect(page.get_by_role('textbox', name='Project note', exact=True)).to_have_value('SHARED-RESUMED')
+                        """)
+                        polled = await call("coding_write_stdin", {
+                            "command_id": background_command.structuredContent["command_id"],
+                            "chars": "", "yield_time_ms": 0, "bridge_action_id": "shared-input-poll-running",
+                        })
+                        assert polled.structuredContent["status"] == "running"
                         results.append(
-                            "Server-enforced view-only rejects injected input; human channel accepts it"
+                            "Legacy view rejects injected input; shared input keeps AGENT, invalidates old observation, allows fresh action, and leaves managed command running"
                         )
                         await page.wait_for_function(
                             """() => {
@@ -579,6 +736,7 @@ async def run(restart):
                         await page.screenshot(path=str(OUT / "viewer-before-controls.png"), full_page=True)
                         # CI headless browsers do not automatically grant clipboard access.
                         # First verify the denied-permission fallback, then actual copying.
+                        await page.locator("#connection-settings > summary").click()
                         await page.get_by_role("button", name="Copy endpoint").click()
                         await page.locator("#copy-feedback").filter(
                             has_text="Select and copy the endpoint manually."
@@ -589,19 +747,36 @@ async def run(restart):
                         await page.get_by_role("button", name="Copy endpoint").click()
                         await page.locator("#copy-feedback").filter(has_text="Endpoint copied").wait_for()
                         assert await page.evaluate("navigator.clipboard.readText()") == URL + "/mcp"
+                        await page.locator("#connection-settings > summary").click()
+                        await page.locator("#personal-settings > summary").click()
                         await page.get_by_role("button", name="Build a personal tool", exact=True).click()
                         assert "Use Coding Tools MCP" in await page.evaluate("navigator.clipboard.readText()")
                         await page.locator("#task-feedback").filter(has_text="Prompt copied").wait_for()
+                        await page.locator("#personal-settings > summary").click()
                         await page.get_by_role("button", name="Full screen", exact=True).click()
                         await page.wait_for_function("() => !!document.fullscreenElement")
+                        await assert_viewer_fits(page, fullscreen=True)
                         await page.evaluate("document.exitFullscreen()")
                         await page.wait_for_function("() => !document.fullscreenElement")
-                        await page.get_by_role("button", name="Private takeover").click()
-                        await page.locator("#status").filter(has_text="PRIVATE").wait_for()
-                        await page.get_by_role("button", name="Hand back to AI").click()
-                        await page.locator("#status").filter(has_text="AGENT").wait_for()
-                        await page.get_by_role("button", name="Reconnect screen").click()
-                        await page.locator('#screen[data-connected="true"]').wait_for()
+                        await assert_viewer_fits(page)
+                        control_canvas = await page.locator("#screen canvas").element_handle()
+                        await page.get_by_role("button", name="Go private", exact=True).click()
+                        await page.locator("#status").filter(has_text="Private").wait_for()
+                        assert (await call("desktop_screenshot", allow_error=True)).isError
+                        assert unpack(await call("session_status"))["state"] == "PRIVATE"
+                        assert await page.evaluate("old => document.querySelector('#screen canvas') === old", control_canvas)
+                        await page.get_by_role("button", name="Resume AI", exact=True).click()
+                        await page.get_by_role("button", name="Pause AI", exact=True).wait_for()
+                        assert unpack(await call("session_status"))["state"] == "AGENT"
+                        for _ in range(2):
+                            old_canvas = await page.locator("#screen canvas").element_handle()
+                            await page.evaluate("window.__sharedSockets.find(socket => socket.readyState === WebSocket.OPEN).close()")
+                            await page.wait_for_function("""old => {
+                                const screen = document.querySelector('#screen');
+                                const canvas = screen.querySelector('canvas');
+                                return screen.dataset.connected === 'true' && canvas && canvas !== old;
+                            }""", arg=old_canvas, timeout=20000)
+                            assert unpack(await call("session_status"))["state"] == "AGENT"
                         await page.wait_for_function(
                             """() => {
                             const c=document.querySelector('#screen canvas');
@@ -611,16 +786,23 @@ async def run(restart):
                             for(let i=0;i<d.length;i+=400)colors.add(`${d[i]},${d[i+1]},${d[i+2]}`);
                             return colors.size>30;
                         }""", timeout=20000)
+                        await assert_viewer_fits(page)
                         await page.screenshot(path=str(OUT / "viewer.png"), full_page=True)
                         for width in [390, 768]:
                             await page.set_viewport_size({"width": width, "height": 844})
+                            await assert_viewer_fits(page)
                             assert await page.evaluate(
                                 "document.documentElement.scrollWidth <= window.innerWidth"
                             ), f"Horizontal overflow at {width}px"
                             await page.get_by_role("button", name="Pause AI").click()
-                            await page.locator("#status").filter(has_text="PAUSED").wait_for()
-                            await page.get_by_role("button", name="Hand back to AI").click()
-                            await page.locator("#status").filter(has_text="AGENT").wait_for()
+                            await page.locator("#status").filter(has_text="AI paused").wait_for()
+                            assert unpack(await call("session_status"))["state"] == "PAUSED"
+                            assert await page.locator('#screen[data-connected="true"]').count() == 1
+                            denied = await call("session_start", allow_error=True)
+                            assert denied.isError and "CONTROL_NOT_OWNED" in str(denied)
+                            await page.get_by_role("button", name="Resume AI").click()
+                            await page.get_by_role("button", name="Pause AI", exact=True).wait_for()
+                            assert unpack(await call("session_status"))["state"] == "AGENT"
                             await page.wait_for_function(
                                 """() => {
                                 const c=document.querySelector('#screen canvas');
@@ -633,11 +815,11 @@ async def run(restart):
                             await page.screenshot(
                                 path=str(OUT / f"viewer-{width}.png"), full_page=True
                             )
-                        results.append("Responsive UI: copy, private mode, reconnect, 390px and 768px controls")
+                        results.append("Responsive UI: complete desktop fits at 1440px, 390px, 768px and fullscreen; collapsed setup, copy, private mode, automatic reconnect and controls")
                         assert not errors, errors
                         await browser_ui.close()
                     results.append(
-                        "Real noVNC viewer rendered, takeover/pause/resume and artifact UI verified"
+                        "Real shared noVNC viewer rendered, pause/private/resume and artifact UI verified"
                     )
                 await http.post("/api/logout", headers=headers)
                 assert (

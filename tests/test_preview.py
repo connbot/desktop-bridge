@@ -1,4 +1,7 @@
 import importlib.util
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -43,3 +46,29 @@ def test_preview_accepts_normal_password_and_spaces():
 
 def test_preview_longest_bounded_demo():
     assert preview.configuration({"PREVIEW_MODE": "verify", "PREVIEW_MINUTES": "350"})[2] == 350
+
+
+@pytest.mark.parametrize("initializer", [False, True])
+def test_check_runs_without_site_packages(initializer):
+    env = {"PATH": os.environ.get("PATH", ""), "PREVIEW_MODE": "verify"}
+    if initializer:
+        env.update(INITIALIZER_OPERATION="a" * 32, INITIALIZER_LAUNCH_ID="b" * 32,
+                   INITIALIZER_URL="https://setup.example.test")
+    result = subprocess.run(
+        [sys.executable, "-S", str(Path(__file__).parents[1] / "scripts/preview.py"), "--check"],
+        env=env, capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Preview configuration is valid" in result.stdout
+
+
+def test_dependency_free_check_still_rejects_invalid_initializer_target():
+    result = subprocess.run(
+        [sys.executable, "-S", str(Path(__file__).parents[1] / "scripts/preview.py"), "--check"],
+        env={"PATH": os.environ.get("PATH", ""), "PREVIEW_MODE": "verify",
+             "INITIALIZER_OPERATION": "a" * 32, "INITIALIZER_URL": "http://invalid.example"},
+        capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode != 0
+    assert "Initializer must be an HTTPS origin" in result.stderr
+    assert "ModuleNotFoundError" not in result.stderr

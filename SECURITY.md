@@ -9,11 +9,31 @@ sandbox for hostile code, a hardened personal-computer service or tenant isolati
 
 - OAuth authorization-code flow with S256 PKCE requires owner approval. The owner
   bootstrap token is not accepted directly as an MCP bearer token.
-- The viewer is read-only until the owner takes control. Private takeover blocks
-  model observations and tool access; the owner's viewer remains available.
-- Writes share one control lease and durable action receipts. Human takeover
-  blocks new actions, drains the current action and attempts to stop tracked
-  managed commands. Unknown outcomes require inspection before another attempt.
+- Refresh-capable clients get one-hour access tokens and single-use rotating
+  refresh tokens, bound to the approved client, resource and `computer` scope.
+  Only token hashes are retained. Grants expire after 30 days absolutely or
+  7 days without refreshing; access expiry never exceeds the grant deadline.
+  Reuse of an already consumed refresh token revokes all tokens in that grant.
+  Clients must serialize refreshes and persist each returned replacement;
+  retrying an old token after a lost response also requires a new authorization.
+- Code-only clients receive no refresh token. Existing access tokens, owner
+  passwords and refresh tokens cannot be substituted for one another.
+  **Disconnect & revoke** clears every access/refresh grant, pending code and
+  viewer session. The server supports one process; token state is not shared
+  across workers and is never persisted to a database or workspace volume.
+- The authenticated owner can use the shared desktop directly. Its pixel stream
+  remains server-side read-only; a bounded parser routes actual input through the
+  same lock as tool writes, with an input-server acknowledgement before release.
+  Watching never transfers control. Held keys/buttons block agent input, and
+  every human input invalidates previous GUI observations and queued tool writes.
+- Private mode still blocks model observations and tool access; the owner's
+  viewer remains available. Explicit Pause/Private/Stop drain the current action
+  and attempt to stop tracked commands. Ordinary input does not kill commands.
+  AI cannot override an explicit pause or silently retry an unknown input result.
+- Tool writes retain durable action receipts. Unknown outcomes require inspection
+  before another attempt. Failed key/button cleanup blocks AI until the owner
+  resumes and a release-only recovery is acknowledged. Legacy read-only/control
+  endpoints retain their prior authorization checks.
 - Restart clears in-memory OAuth clients/grants and viewer sessions. Workspace,
   browser profile and action receipts persist on disk.
 

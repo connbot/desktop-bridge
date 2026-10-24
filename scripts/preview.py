@@ -59,6 +59,8 @@ def summary(message):
 
 def main():
     mode, kind, minutes, base = configuration(os.environ)
+    from initializer_events import report, report_config
+    report_config(os.environ)
     if "--check" in sys.argv:
         print("Preview configuration is valid. No secrets printed.")
         return
@@ -77,6 +79,8 @@ def main():
     args += ["--url", "http://127.0.0.1:8080"] if kind == "quick" else ["run"]
     tunnel_env = {k: os.environ[k] for k in ("PATH", "HOME", "TUNNEL_TOKEN") if k in os.environ}
     process = None
+    reported_ready = False
+    report_sequence = 0
 
     def interrupted(*_):
         raise KeyboardInterrupt
@@ -137,10 +141,14 @@ def main():
                 time.sleep(2)
             else:
                 raise RuntimeError("Desktop failed readiness after clearing test state")
-        expiry = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(time.time() + minutes * 60))
+        expires_at = time.time() + minutes * 60
+        expiry = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(expires_at))
+        report_sequence += 1
+        reported_ready = report("ready", report_sequence, origin=base, expires_at=expires_at)
         summary(f"## Agent Computer development preview\n\nMCP endpoint: {base}/mcp\n\nDesktop and OAuth login: {base}\n\nAuthentication: OAuth with dynamic client registration and PKCE. Sign in using your BRIDGE_OWNER_TOKEN; never paste it into ChatGPT.\n\nScheduled stop: {expiry}. Cancel this workflow to stop early. Download needed files before stopping: the desktop and its data are disposable.\n\nQuick URLs change on restart. This session is for developing and testing Agent Computer, not permanent hosting.")
         deadline = time.monotonic() + minutes * 60
         failures = 0
+        next_report = time.monotonic() + 30
         with httpx.Client(timeout=10) as client:
             while time.monotonic() < deadline:
                 if process.poll() is not None:
@@ -149,11 +157,17 @@ def main():
                     failures = 0 if client.get("http://127.0.0.1:8080/healthz").status_code == 200 else failures + 1
                 except httpx.HTTPError:
                     failures += 1
+                if time.monotonic() >= next_report:
+                    report_sequence += 1
+                    reported_ready = report("ready", report_sequence, origin=base, expires_at=expires_at) or reported_ready
+                    next_report = time.monotonic() + 30
                 if failures >= 3:
                     raise RuntimeError("Desktop health check failed three times")
                 time.sleep(min(15, max(0, deadline - time.monotonic())))
         summary("Preview lifetime ended. The tunnel, desktop and disposable files have been removed.")
     finally:
+        if reported_ready:
+            report("ending", report_sequence + 1)
         if process:
             process.terminate()
             try:

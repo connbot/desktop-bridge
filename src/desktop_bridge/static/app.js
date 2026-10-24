@@ -1,5 +1,5 @@
 const $ = (id) => document.getElementById(id);
-let csrf = '', rfb = null, screenKey = '', statusTimer = null, busy = false, currentMode = 'READY', connectionGeneration = 0, authGeneration = 0;
+let csrf = '', rfb = null, connecting = false, statusTimer = null, connectionTimer = null, busy = false, connectionGeneration = 0, authGeneration = 0, statusGeneration = 0;
 async function api(path, options = {}) {
   const response = await fetch(path, {...options, headers: {'Content-Type':'application/json', 'X-CSRF-Token':csrf, ...options.headers}});
   const data = await response.json().catch(() => ({}));
@@ -7,30 +7,56 @@ async function api(path, options = {}) {
   return data;
 }
 function error(e) { $('error').textContent = e.message; }
+function disconnectScreen() {
+  connectionGeneration++; connecting = false;
+  clearTimeout(connectionTimer); connectionTimer = null;
+  const connection = rfb; rfb = null; connection?.disconnect();
+  $('screen').replaceChildren(); $('screen').dataset.connected = 'false';
+}
 function loginView() {
-  authGeneration++;
-  clearTimeout(statusTimer); connectionGeneration++; rfb?.disconnect(); rfb = null; screenKey = '';
+  authGeneration++; csrf = ''; busy = false;
+  clearTimeout(statusTimer); disconnectScreen();
   for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close();
-  personalGeneration++; personalData = null; $('profile-details').replaceChildren(); $('personal-task-list').replaceChildren();
+  for (const button of document.querySelectorAll('[data-mode]')) button.disabled = false;
+  personalGeneration++; personalLoading = false; personalData = null;
+  $('profile-details').replaceChildren(); $('personal-task-list').replaceChildren();
+  $('personal-feedback').hidden = true; $('mcp-url').value = ''; $('error').textContent = ''; $('refresh-files').disabled = false;
   $('workspace').hidden = true; $('login').hidden = false;
 }
-async function connectScreen(mode, force = false) {
-  const key = ['HUMAN','PRIVATE'].includes(mode) ? 'control' : 'view';
-  if (!force && rfb && screenKey === key) return;
+async function connectScreen() {
+  if (rfb || connecting || $('workspace').hidden) return;
   const generation = ++connectionGeneration;
-  rfb?.disconnect(); rfb = null; screenKey = key;
-  $('connection-overlay').hidden = true;
+  connecting = true;
   $('connection-label').textContent = 'Connecting…';
-  const {default:RFB} = await import('/novnc/core/rfb.js');
-  if (generation !== connectionGeneration || $('workspace').hidden) return;
-  $('screen').dataset.connected = 'false';
-  $('screen').replaceChildren();
-  rfb = new RFB($('screen'), `${location.protocol==='https:'?'wss':'ws'}://${location.host}/desktop/${key}`);
-  rfb.addEventListener('connect', () => { if (rfb === connection) { $('screen').dataset.connected = 'true'; $('connection-label').textContent = 'Connected'; $('connection-overlay').hidden = true; } });
-  rfb.scaleViewport = true; rfb.resizeSession = false; rfb.viewOnly = key === 'view';
-  const connection = rfb;
-  rfb.addEventListener('disconnect', () => { if (rfb === connection) { screenKey = ''; $('screen').dataset.connected = 'false'; $('connection-label').textContent = 'Disconnected'; $('connection-overlay').hidden = false; } });
-  rfb.addEventListener('securityfailure', () => error(new Error('Desktop connection rejected. Sign in again.')));
+  connectionTimer = setTimeout(() => {
+    if (generation !== connectionGeneration || !connecting) return;
+    disconnectScreen();
+    $('connection-label').textContent = 'Reconnecting…'; $('connection-overlay').hidden = false;
+  }, 15000);
+  try {
+    const {default:RFB} = await import('/novnc/core/rfb.js');
+    if (generation !== connectionGeneration || $('workspace').hidden) return;
+    $('screen').dataset.connected = 'false'; $('screen').replaceChildren();
+    const connection = new RFB($('screen'), `${location.protocol==='https:'?'wss':'ws'}://${location.host}/desktop/shared`);
+    rfb = connection;
+    connection.scaleViewport = true; connection.resizeSession = false; connection.viewOnly = false;
+    connection.addEventListener('connect', () => {
+      if (generation !== connectionGeneration || rfb !== connection) return;
+      clearTimeout(connectionTimer); connectionTimer = null;
+      connecting = false; $('screen').dataset.connected = 'true';
+      $('connection-label').textContent = 'Connected'; $('connection-overlay').hidden = true;
+    });
+    connection.addEventListener('disconnect', () => {
+      if (generation !== connectionGeneration || rfb !== connection) return;
+      clearTimeout(connectionTimer); connectionTimer = null;
+      rfb = null; connecting = false; $('screen').dataset.connected = 'false';
+      $('connection-label').textContent = 'Reconnecting…'; $('connection-overlay').hidden = false;
+    });
+  } catch {
+    if (generation !== connectionGeneration || $('workspace').hidden) return;
+    clearTimeout(connectionTimer); connectionTimer = null;
+    connecting = false; $('connection-label').textContent = 'Reconnecting…'; $('connection-overlay').hidden = false;
+  }
 }
 function showEvents(events) {
   if (!events.length) { $('events').textContent = 'Your session starts here.'; return; }
@@ -40,71 +66,99 @@ function showEvents(events) {
   }));
 }
 function controlNote(state) {
-  if (state.in_flight) {
-    return ['HUMAN', 'PRIVATE', 'PAUSED', 'STOPPED'].includes(state.state)
-      ? 'Waiting for an in-flight action. New AI actions are blocked after takeover. Managed shell processes are being stopped. Detached external effects cannot be undone.'
-      : 'AI is working. You can watch the desktop or request control.';
-  }
-  if (state.state === 'PRIVATE') return 'Private takeover: AI observations and actions are blocked. You control the desktop.';
-  if (state.state === 'HUMAN') return 'You have control. AI writes are blocked until you hand back.';
-  if (state.state === 'AGENT') return 'AI has control. You are watching a server-enforced read-only stream.';
-  if (state.state === 'READY') return 'Ready for your AI client. Start a task in your connected chat.';
-  return 'AI actions are paused. Hand back to AI to resume.';
+  if (state.state === 'PRIVATE') return state.in_flight
+    ? 'Private: new AI observations and actions are blocked. Waiting for the current action to stop. Resume AI when you are ready to share again.'
+    : 'Private: AI observations and actions are blocked until you resume. You can still use the desktop.';
+  if (['HUMAN', 'PAUSED', 'STOPPED'].includes(state.state)) return state.in_flight
+    ? 'AI is pausing. New AI actions are blocked while the current action stops. Effects already sent cannot be undone.'
+    : 'AI actions are paused. You can still use the desktop. Resume AI when you are ready.';
+  if (state.human_input_pending) return 'Applying your input as soon as the current AI action finishes. No hand-back needed.';
+  if (state.in_flight) return 'AI is working. Click or type whenever you need to; your input is applied between AI actions.';
+  return 'Use the desktop directly. Watching does not pause your AI.';
 }
 async function refresh() {
-  const generation = authGeneration;
+  const generation = authGeneration, request = ++statusGeneration;
   clearTimeout(statusTimer);
   try {
-    const s=await api('/api/status');
-    if (generation !== authGeneration) return;
-    csrf=s.csrf;
+    const s = await api('/api/status');
+    if (generation !== authGeneration || request !== statusGeneration) return;
+    csrf = s.csrf;
     const pending = new URLSearchParams(location.search).get('authorize');
     if (pending) { const u = new URL(pending,location.origin); if(u.origin===location.origin && u.pathname==='/authorize'){location.replace(u);return;} }
-    const entering = $('workspace').hidden;
-    $('login').hidden=true; $('workspace').hidden=false;
-    currentMode=s.state; $('status').textContent=s.state; $('status').parentElement.dataset.state=s.state;
-    $('view-label').textContent=s.state==='PRIVATE' ? 'Private control · AI cannot observe' : s.state==='HUMAN' ? 'You are in control' : 'Read-only viewer';
-    for (const button of document.querySelectorAll('[data-mode]')) button.setAttribute('aria-pressed', String(button.dataset.mode.toUpperCase()===s.state)); $('mcp-url').value=s.mcp_url; showEvents(s.events);
-    $('control-note').textContent=controlNote(s);
+    $('login').hidden = true; $('workspace').hidden = false;
+    const paused = ['HUMAN', 'PRIVATE', 'PAUSED', 'STOPPED'].includes(s.state);
+    $('status').textContent = s.state === 'PRIVATE' ? 'Private' : paused ? 'AI paused' : s.in_flight ? 'AI working' : 'Shared';
+    $('status').parentElement.dataset.state = s.state;
+    $('view-label').textContent = s.state === 'PRIVATE' ? 'Private · AI cannot observe' : 'Click or type to use your computer';
+    for (const button of document.querySelectorAll('[data-mode]')) {
+      button.hidden = button.dataset.mode === 'agent' ? !paused : button.dataset.mode === 'paused' ? paused : s.state === 'PRIVATE';
+      button.setAttribute('aria-pressed', String(button.dataset.mode.toUpperCase() === s.state));
+    }
+    $('mcp-url').value = s.mcp_url; showEvents(s.events);
+    $('control-note').textContent = controlNote(s);
+    connectScreen();
     storageName = s.context_store?.provider === 'postgres' ? 'Postgres · Neon-compatible' : s.context_store?.provider === 'local' ? 'Local file' : 'Optional memory';
-    loadPersonal().catch(contextUnavailable);
-    if (entering) await files();
-    if (!s.in_flight) await connectScreen(s.state);
+    if ($('personal-settings').open) loadPersonal();
   } catch(e) {
-    if (generation !== authGeneration) return;
+    if (generation !== authGeneration || request !== statusGeneration) return;
     if (/Sign in|Login/.test(e.message)) loginView(); else error(e);
-  } finally { if (generation === authGeneration && !$('workspace').hidden) statusTimer=setTimeout(refresh,2500); }
+  } finally {
+    if (generation === authGeneration && request === statusGeneration && !$('workspace').hidden) statusTimer = setTimeout(refresh,2500);
+  }
 }
-$('login-form').addEventListener('submit', async e=>{
-  e.preventDefault(); const submit=e.submitter; if(submit.disabled)return; submit.disabled=true; $('login-error').textContent='';
-  try {const s=await api('/api/login',{method:'POST',body:JSON.stringify({token:$('token').value})}); authGeneration++; csrf=s.csrf; $('token').value='';
-    const next=new URLSearchParams(location.search).get('authorize');
-    if(next){const u=new URL(next,location.origin);if(u.origin===location.origin && u.pathname==='/authorize'){location.assign(u);return;}}
+$('login-form').addEventListener('submit', async e => {
+  e.preventDefault(); const submit = e.submitter; if (submit.disabled) return;
+  const generation = ++authGeneration;
+  clearTimeout(statusTimer); submit.disabled = true; $('login-error').textContent = '';
+  try {
+    const s = await api('/api/login', {method:'POST', body:JSON.stringify({token:$('token').value})});
+    if (generation !== authGeneration) return;
+    csrf = s.csrf; $('token').value = '';
+    const next = new URLSearchParams(location.search).get('authorize');
+    if (next) { const u = new URL(next,location.origin); if(u.origin===location.origin && u.pathname==='/authorize'){location.assign(u);return;} }
     await refresh();
-  } catch(e){$('login-error').textContent=e.message;} finally {submit.disabled=false;}
+  } catch(e) { if (generation === authGeneration) $('login-error').textContent = e.message; }
+  finally { submit.disabled = false; }
 });
-for(const button of document.querySelectorAll('[data-mode]')) button.addEventListener('click',async()=>{
-  if(busy)return;busy=true;for(const control of document.querySelectorAll('[data-mode]'))control.disabled=true;$('error').textContent='';
-  try{await api(`/api/control/${button.dataset.mode}`,{method:'POST'});rfb?.disconnect();rfb=null;await refresh();}catch(e){error(e);}finally{busy=false;for(const control of document.querySelectorAll('[data-mode]'))control.disabled=false;}
+for (const button of document.querySelectorAll('[data-mode]')) button.addEventListener('click', async () => {
+  if (busy || $('workspace').hidden) return;
+  const generation = authGeneration;
+  busy = true; statusGeneration++; clearTimeout(statusTimer);
+  for (const control of document.querySelectorAll('[data-mode]')) control.disabled = true;
+  $('error').textContent = '';
+  try {
+    await api(`/api/control/${button.dataset.mode}`, {method:'POST'});
+    if (generation === authGeneration) await refresh();
+  } catch(e) {
+    if (generation === authGeneration) { error(e); statusTimer = setTimeout(refresh,2500); }
+  } finally {
+    if (generation === authGeneration) { busy = false; for (const control of document.querySelectorAll('[data-mode]')) control.disabled = false; }
+  }
 });
-$('logout').addEventListener('click',async()=>{try{await api('/api/logout',{method:'POST'});loginView();}catch(e){error(e);}});
-$('reconnect').addEventListener('click',()=>connectScreen(currentMode,true).catch(error));
+$('logout').addEventListener('click', async () => {
+  const generation = ++authGeneration;
+  clearTimeout(statusTimer); disconnectScreen();
+  try { await api('/api/logout', {method:'POST'}); if (generation === authGeneration) loginView(); }
+  catch(e) { if (generation === authGeneration) { busy = false; for (const button of document.querySelectorAll('[data-mode]')) button.disabled = false; error(e); statusTimer = setTimeout(refresh,2500); } }
+});
 $('copy-url').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('mcp-url').value);$('copy-feedback').textContent='Endpoint copied';}catch{$('mcp-url').focus();$('mcp-url').select();$('copy-feedback').textContent='Select and copy the endpoint manually.';}});
 $('fullscreen').addEventListener('click',async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await $('screen-shell').requestFullscreen();}catch{error(new Error('Full screen is unavailable in this browser.'));}});
 function formatBytes(bytes) { return bytes < 1024 ? `${bytes} B` : bytes < 1048576 ? `${(bytes/1024).toFixed(1)} KB` : `${(bytes/1048576).toFixed(1)} MB`; }
 async function files(){
-  const button=$('refresh-files');button.disabled=true;
+  const generation = authGeneration, button=$('refresh-files');button.disabled=true;
   try{
-    const data=await api('/api/artifacts');$('file-count').textContent=data.files.length;
+    const data=await api('/api/artifacts');if (generation !== authGeneration || $('workspace').hidden) return;$('file-count').textContent=data.files.length;
     $('files').replaceChildren(...data.files.map(f=>{
       const li=document.createElement('li'),a=document.createElement('a'),size=document.createElement('span');
       a.textContent=f.path;a.href='/api/artifacts/'+f.path.split('/').map(encodeURIComponent).join('/');a.download=f.path.split('/').pop();
       size.className='file-size';size.textContent=formatBytes(f.bytes);li.append(a,size);return li;
     }));
     if(!data.files.length){const li=document.createElement('li'),hint=document.createElement('span');li.className='empty-state';li.textContent='No files yet';hint.textContent='Files saved to the workspace appear here.';li.append(hint);$('files').append(li);}
-  }catch(e){error(e);}finally{button.disabled=false;}
+  }catch(e){if (generation === authGeneration) error(e);}finally{if (generation === authGeneration) button.disabled=false;}
 }
 $('refresh-files').addEventListener('click',files);
+$('workspace-details').addEventListener('toggle', () => { if ($('workspace-details').open && !$('workspace').hidden) files(); });
+$('personal-settings').addEventListener('toggle', () => { if ($('personal-settings').open && !$('workspace').hidden) loadPersonal(); });
 const taskExamples = {
   planner: 'Help me plan a weekend. Ask for my location, available time, budget, and interests if missing. Use the browser to check sources, distinguish facts from assumptions, then use Coding Tools MCP to create an editable plan in the workspace. Do not book or pay for anything.',
   files: 'Help organize files I provide in the workspace. First inspect and propose a structure. Use Coding Tools MCP to make a non-destructive organized copy and an index. Preserve originals and flag uncertain classifications. Ask me for files if none are available.',
@@ -131,15 +185,17 @@ function contextUnavailable(e) {
 }
 async function loadPersonal() {
   if (personalLoading) return;
-  personalLoading = true; const generation = personalGeneration;
+  personalLoading = true; const generation = personalGeneration, session = authGeneration;
   try {
     const data = await api('/api/personal');
-    if (generation !== personalGeneration || $('workspace').hidden) return;
+    if (generation !== personalGeneration || session !== authGeneration || $('workspace').hidden) return;
     if (personalData && personalData.revision > data.revision) return;
     personalData = data; $('context-provider').textContent = `${storageName} · connected`;
     for (const id of ['edit-profile', 'new-task', 'import-context']) $(id).disabled = false;
     $('export-context').removeAttribute('aria-disabled'); renderPersonal();
-  } finally { personalLoading = false; }
+  } catch(e) {
+    if (generation === personalGeneration && session === authGeneration) contextUnavailable(e);
+  } finally { if (generation === personalGeneration) personalLoading = false; }
 }
 function renderPersonal() {
   const profile = personalData.profile;
@@ -194,10 +250,10 @@ function showProfile() {
 $('edit-profile').addEventListener('click', showProfile);
 for (const close of document.querySelectorAll('[data-close]')) close.addEventListener('click', () => $(close.dataset.close).close());
 $('profile-form').addEventListener('submit', async event => {
-  event.preventDefault(); if (event.submitter.disabled) return; event.submitter.disabled = true;
+  event.preventDefault(); if (event.submitter.disabled) return; event.submitter.disabled = true; const generation = authGeneration;
   const profile = Object.fromEntries(['name', 'preferences', 'goals', 'constraints'].map(key => [key, $(`profile-${key}`).value]));
-  try { personalData = await api('/api/personal/profile', {method:'PUT', body:JSON.stringify({expected_revision:profileRevision, profile})}); renderPersonal(); $('profile-dialog').close(); feedback('Preferences saved. Your connected AI can read them before its next task.'); }
-  catch (e) { $('profile-error').textContent = e.message; } finally { event.submitter.disabled = false; }
+  try { const data = await api('/api/personal/profile', {method:'PUT', body:JSON.stringify({expected_revision:profileRevision, profile})}); if (generation !== authGeneration || $('workspace').hidden) return; personalData = data; renderPersonal(); $('profile-dialog').close(); feedback('Preferences saved. Your connected AI can read them before its next task.'); }
+  catch (e) { if (generation === authGeneration) $('profile-error').textContent = e.message; } finally { event.submitter.disabled = false; }
 });
 function openTask(task = null) {
   if (!personalData) return;
@@ -209,11 +265,11 @@ function openTask(task = null) {
 }
 $('new-task').addEventListener('click', () => openTask());
 $('personal-task-form').addEventListener('submit', async event => {
-  event.preventDefault(); if (event.submitter.disabled) return; event.submitter.disabled = true;
+  event.preventDefault(); if (event.submitter.disabled) return; event.submitter.disabled = true; const generation = authGeneration;
   const task = Object.fromEntries(['id', 'title', 'status', 'summary', 'evidence'].map(key => [key, $(`personal-task-${key}`).value]));
   task.next_step = $('personal-task-next-step').value; task.artifacts = $('personal-task-artifacts').value.split('\n').map(path => path.trim()).filter(Boolean);
-  try { personalData = await api('/api/personal/tasks', {method:'POST', body:JSON.stringify({expected_revision:taskRevision, task})}); renderPersonal(); $('task-dialog').close(); feedback('Task saved. Copy its prompt to your connected AI chat to work on it.'); }
-  catch (e) { $('personal-task-error').textContent = e.message; } finally { event.submitter.disabled = false; }
+  try { const data = await api('/api/personal/tasks', {method:'POST', body:JSON.stringify({expected_revision:taskRevision, task})}); if (generation !== authGeneration || $('workspace').hidden) return; personalData = data; renderPersonal(); $('task-dialog').close(); feedback('Task saved. Copy its prompt to your connected AI chat to work on it.'); }
+  catch (e) { if (generation === authGeneration) $('personal-task-error').textContent = e.message; } finally { event.submitter.disabled = false; }
 });
 async function copyTask(task) {
   const prompt = `Read personal_context first. Continue task ${JSON.stringify(task.id)}: ${task.title}. Use relevant saved preferences, goals, constraints and previous results. ${task.next_step ? 'Next step: ' + task.next_step : 'Ask me about any essential missing details.'} Use Coding Tools MCP for files, editing and execution. Record progress and evidence with personal_record_task, linking real workspace artifacts. Only report external actions complete after verifying them; ask before commitments or sending anything.`;
@@ -222,18 +278,20 @@ async function copyTask(task) {
 }
 $('import-context').addEventListener('click', () => $('context-file').click());
 $('context-file').addEventListener('change', async event => {
-  const file = event.target.files[0]; if (!file) return;
+  const file = event.target.files[0]; if (!file) return; const generation = authGeneration;
   try {
     if (file.size > 128 * 1024) throw new Error('Choose a context export smaller than 128 KiB.');
-    importedContext = JSON.parse(await file.text());
+    const context = JSON.parse(await file.text());
+    if (generation !== authGeneration || $('workspace').hidden) return;
+    importedContext = context;
     if (importedContext.schema_version !== 1 || !importedContext.profile || !Array.isArray(importedContext.tasks)) throw new Error('Choose an Agent Computer personal context export.');
     importRevision = personalData.revision; $('import-preview').textContent = `${file.name}: ${importedContext.tasks.length} task record(s).`;
     $('import-error').textContent = ''; $('import-dialog').showModal();
-  } catch (e) { feedback(e.message); } finally { event.target.value = ''; }
+  } catch (e) { if (generation === authGeneration) feedback(e.message); } finally { event.target.value = ''; }
 });
 $('import-form').addEventListener('submit', async event => {
-  event.preventDefault(); if (event.submitter.disabled) return; event.submitter.disabled = true;
-  try { personalData = await api('/api/personal/import', {method:'POST', body:JSON.stringify({expected_revision:importRevision, context:importedContext})}); renderPersonal(); $('import-dialog').close(); feedback('Context imported. Artifact files must be copied separately.'); }
-  catch (e) { $('import-error').textContent = e.message; } finally { event.submitter.disabled = false; }
+  event.preventDefault(); if (event.submitter.disabled) return; event.submitter.disabled = true; const generation = authGeneration;
+  try { const data = await api('/api/personal/import', {method:'POST', body:JSON.stringify({expected_revision:importRevision, context:importedContext})}); if (generation !== authGeneration || $('workspace').hidden) return; personalData = data; renderPersonal(); $('import-dialog').close(); feedback('Context imported. Artifact files must be copied separately.'); }
+  catch (e) { if (generation === authGeneration) $('import-error').textContent = e.message; } finally { event.submitter.disabled = false; }
 });
 refresh();

@@ -12,6 +12,8 @@ import hmac
 import re
 import secrets
 import time
+from dataclasses import dataclass
+from threading import RLock
 from urllib.parse import urlsplit
 
 from .state import BridgeError
@@ -19,6 +21,23 @@ from .state import BridgeError
 
 def digest(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
+
+
+ACCESS_TOKEN_SECONDS = 3600
+GRANT_SECONDS = 30 * 24 * 3600
+REFRESH_IDLE_SECONDS = 7 * 24 * 3600
+MAX_GRANTS = 100
+MAX_REFRESH_TOKENS = 100_000
+
+
+@dataclass
+class OAuthGrant:
+    client_id: str
+    resource: str
+    scope: str
+    expires_at: float
+    refresh_expires_at: float
+    current_refresh: str | None = None
 
 
 class Auth:
@@ -30,6 +49,10 @@ class Auth:
         self.clients = {}
         self.codes = {}
         self.tokens = {}
+        self.grants: dict[str, OAuthGrant] = {}
+        # Keep consumed hashes until their grant ends to detect refresh replay.
+        self.refresh_tokens: dict[str, str] = {}
+        self._lock = RLock()
         self.sessions = {}
         self.attempts = {}
 
@@ -62,12 +85,21 @@ class Auth:
 
     def bearer(self, token: str):
         # Owner bootstrap token intentionally cannot be used as an MCP token.
-        return self.tokens.get(digest(token), 0) > time.time()
+        with self._lock:
+            item = self.tokens.get(digest(token))
+            if not item:
+                return False
+            grant = self.grants.get(item[0])
+            now = time.time()
+            return bool(grant and item[1] > now and grant.expires_at > now)
 
     def revoke(self):
-        self.tokens.clear()
-        self.codes.clear()
-        self.sessions.clear()
+        with self._lock:
+            self.tokens.clear()
+            self.grants.clear()
+            self.refresh_tokens.clear()
+            self.codes.clear()
+            self.sessions.clear()
 
     def register(self, data):
         if not isinstance(data, dict):
@@ -97,13 +129,21 @@ class Auth:
             raise BridgeError("REGISTRY_FULL", "Restart service to clear unused clients")
         if data.get("token_endpoint_auth_method", "none") != "none":
             raise BridgeError("INVALID_CLIENT", "Only public PKCE clients are supported")
+        grant_types = data.get("grant_types", ["authorization_code"])
+        if (
+            not isinstance(grant_types, list)
+            or not all(isinstance(value, str) for value in grant_types)
+            or "authorization_code" not in grant_types
+            or not set(grant_types) <= {"authorization_code", "refresh_token"}
+        ):
+            raise BridgeError("INVALID_CLIENT", "Unsupported grant_types")
         client = secrets.token_urlsafe(24)
         self.clients[client] = {
             "client_id": client,
             "redirect_uris": redirects,
             "client_name": str(data.get("client_name", "MCP client"))[:120],
             "token_endpoint_auth_method": "none",
-            "grant_types": ["authorization_code"],
+            "grant_types": list(dict.fromkeys(grant_types)),
             "response_types": ["code"],
         }
         return self.clients[client]
@@ -134,10 +174,27 @@ class Auth:
         return code
 
     def exchange(self, data):
-        if data.get("grant_type") != "authorization_code":
-            raise BridgeError("UNSUPPORTED_GRANT_TYPE", "Use authorization_code")
+        if not isinstance(data, dict) or any(
+            not isinstance(key, str) or not isinstance(value, str) or len(value) > 4096
+            for key, value in data.items()
+        ):
+            raise BridgeError("INVALID_REQUEST", "Invalid token request")
+        # Rotation and revocation are one atomic operation, including callers in
+        # different threads. State remains deliberately local to one process.
+        with self._lock:
+            now = time.time()
+            self._prune(now)
+            if data.get("grant_type") == "refresh_token":
+                return self._refresh(data, now)
+            if data.get("grant_type") != "authorization_code":
+                raise BridgeError(
+                    "UNSUPPORTED_GRANT_TYPE", "Use authorization_code or refresh_token"
+                )
+            return self._exchange_code(data, now)
+
+    def _exchange_code(self, data, now):
         item = self.codes.pop(digest(data.get("code", "")), None)
-        if not item or item[1] < time.time():
+        if not item or item[1] <= now:
             raise BridgeError("INVALID_GRANT", "Expired or used authorization code")
         params = item[0]
         verifier = data.get("code_verifier", "")
@@ -155,12 +212,82 @@ class Auth:
             or data.get("resource") not in {None, self.base_url + "/mcp"}
         ):
             raise BridgeError("INVALID_GRANT", "Authorization binding failed")
-        self.tokens = {k: v for k, v in self.tokens.items() if v > time.time()}
+        client = self.clients.get(params["client_id"])
+        if not client:
+            raise BridgeError("INVALID_GRANT", "Unregistered client")
+        renewable = "refresh_token" in client["grant_types"]
+        if len(self.grants) >= MAX_GRANTS or (
+            renewable and len(self.refresh_tokens) >= MAX_REFRESH_TOKENS
+        ):
+            raise BridgeError("RATE_LIMITED", "Too many active grants")
+        grant_id = secrets.token_urlsafe(24)
+        self.grants[grant_id] = OAuthGrant(
+            client_id=params["client_id"],
+            resource=self.base_url + "/mcp",
+            scope="computer",
+            expires_at=now + (GRANT_SECONDS if renewable else ACCESS_TOKEN_SECONDS),
+            refresh_expires_at=now + REFRESH_IDLE_SECONDS,
+        )
+        return self._issue(grant_id, now, renewable=renewable)
+
+    def _refresh(self, data, now):
+        token_hash = digest(data.get("refresh_token", ""))
+        grant_id = self.refresh_tokens.get(token_hash)
+        grant = self.grants.get(grant_id)
+        if not grant:
+            raise BridgeError("INVALID_GRANT", "Invalid or expired refresh token")
+        if (
+            data.get("client_id") != grant.client_id
+            or grant.client_id not in self.clients
+            or data.get("resource") not in {None, grant.resource}
+        ):
+            raise BridgeError("INVALID_GRANT", "Refresh token binding failed")
+        if data.get("scope", grant.scope) != grant.scope:
+            raise BridgeError("INVALID_SCOPE", "Only the granted computer scope is allowed")
+        # Check binding before consuming or revoking anything. A request from a
+        # different client/resource must not burn the legitimate client's grant.
+        if not hmac.compare_digest(token_hash, grant.current_refresh or ""):
+            self._revoke_grant(grant_id)
+            raise BridgeError("INVALID_GRANT", "Refresh token reuse; reconnect the client")
+        if len(self.refresh_tokens) >= MAX_REFRESH_TOKENS:
+            raise BridgeError("RATE_LIMITED", "Refresh capacity reached; retry later")
+        grant.refresh_expires_at = min(grant.expires_at, now + REFRESH_IDLE_SECONDS)
+        return self._issue(grant_id, now, renewable=True)
+
+    def _issue(self, grant_id, now, *, renewable):
+        grant = self.grants[grant_id]
+        expires_in = min(ACCESS_TOKEN_SECONDS, int(grant.expires_at - now))
+        if expires_in <= 0:
+            self._revoke_grant(grant_id)
+            raise BridgeError("INVALID_GRANT", "Authorization expired; reconnect the client")
         token = secrets.token_urlsafe(32)
-        self.tokens[digest(token)] = time.time() + 3600
-        return {
+        self.tokens[digest(token)] = (grant_id, now + expires_in)
+        result = {
             "access_token": token,
             "token_type": "Bearer",
-            "expires_in": 3600,
-            "scope": "computer",
+            "expires_in": expires_in,
+            "scope": grant.scope,
+        }
+        if renewable:
+            refresh = secrets.token_urlsafe(32)
+            grant.current_refresh = digest(refresh)
+            self.refresh_tokens[grant.current_refresh] = grant_id
+            result["refresh_token"] = refresh
+        return result
+
+    def _revoke_grant(self, grant_id):
+        self.grants.pop(grant_id, None)
+        self.tokens = {k: v for k, v in self.tokens.items() if v[0] != grant_id}
+        self.refresh_tokens = {k: v for k, v in self.refresh_tokens.items() if v != grant_id}
+
+    def _prune(self, now):
+        self.grants = {
+            k: v for k, v in self.grants.items()
+            if v.expires_at > now and v.refresh_expires_at > now
+        }
+        self.tokens = {
+            k: v for k, v in self.tokens.items() if v[1] > now and v[0] in self.grants
+        }
+        self.refresh_tokens = {
+            k: v for k, v in self.refresh_tokens.items() if v in self.grants
         }

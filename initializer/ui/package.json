@@ -1,0 +1,13 @@
+{
+  "private": true,
+  "scripts": {
+    "build": "esbuild crypto-entry.js --bundle --format=iife --global-name=BridgeCrypto --outfile=../static/crypto.js --minify --supported:template-literal=false"
+  },
+  "dependencies": {
+    "libsodium-wrappers": "0.7.15"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.11",
+    "jsdom": "27.0.1"
+  }
+}

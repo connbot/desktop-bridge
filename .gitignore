@@ -14,3 +14,8 @@ dist/
 fly.toml
 
 config/plugins.json
+
+# Initializer runtime/test state (never deliver these)
+node_modules/
+initializer-state.sqlite3*
+*.sqlite3

@@ -1,11 +1,15 @@
+import asyncio
 import base64
 import hashlib
 import json
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
 from mcp import types
 
+from desktop_bridge import app as app_module
 from desktop_bridge.app import Runtime, create_app
 from desktop_bridge.state import BridgeError
 
@@ -76,6 +80,39 @@ def login(client):
     r = client.post("/api/login", json={"token": TOKEN})
     assert r.status_code == 200
     return {"X-CSRF-Token": r.json()["csrf"]}
+
+
+@pytest.mark.parametrize("idle_seconds", [1801, 24 * 60 * 60])
+async def test_idle_agent_keeps_control_and_managed_work(app, monkeypatch, idle_seconds):
+    # Let app-owned timers run without a real 30-minute wait. Keep the event
+    # loop's own clock/sleep intact so lifespan shutdown still behaves normally.
+    async def timer_tick(_delay):
+        await asyncio.sleep(0)
+
+    monkeypatch.setattr(
+        app_module, "asyncio", SimpleNamespace(**{**vars(asyncio), "sleep": timer_tick})
+    )
+    runtime = app.state.runtime
+    runtime.coding.cancel_running = AsyncMock(return_value=[])
+    async with app.router.lifespan_context(app):
+        await runtime.call("session_start", {})
+        runtime.session.last_activity -= idle_seconds
+        epoch = runtime.session.epoch
+        # Run a timer's sleep and its wakeup, if any background timer is present.
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert runtime.session.status()["state"] == "AGENT"
+        assert runtime.session.epoch == epoch
+        runtime.coding.cancel_running.assert_not_awaited()
+
+        # The next action works after a fresh observation, without Resume AI.
+        shot = await runtime.call("desktop_screenshot", {})
+        await runtime.call("desktop_action", {
+            "action_id": "after-idle",
+            "observation_id": json.loads(shot[0].text)["observation_id"],
+            "action": {"kind": "click", "x": 10, "y": 20},
+        })
+        assert runtime.desktop.calls == 1
 
 
 def test_http_auth_and_csrf(app):

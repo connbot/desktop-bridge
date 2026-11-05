@@ -195,7 +195,7 @@ python3 scripts/doctor.py --running
 | `PERMISSION_REQUIRED` | 默认 `safe` 策略可能拒绝该命令。停止这一步，保留现有结果，让所有者审阅权限。不要自动切换 `trusted`/`dangerous`，也不要改写命令绕过拒绝。 |
 | `UNAUTHORIZED` / `INVALID_GRANT` | 先确认服务仍在运行。刷新授权到期、撤销、重放或服务重启后需重连；旧版仅访问 token 的连接需重新注册客户端并批准一次才能获得刷新能力。不能把所有者密码作为 bearer token。 |
 | 重启后 `unregistered client` | 重新创建连接，重新注册客户端。 |
-| `CONTROL_NOT_OWNED` | 如果你明确暂停或进入隐私模式，点 **Resume AI**。模型不能自行解除这些状态；AI 空闲约 30 分钟也会暂停。 |
+| `CONTROL_NOT_OWNED` | 如果你明确暂停或进入隐私模式，点 **Resume AI**。模型不能自行解除这些状态；单纯空闲不会暂停 AI，也不会停止受管理进程。 |
 | `HUMAN_INPUT_ACTIVE` | 等待排队输入完成、松开按键/鼠标按钮；客户端重新观察后继续，不要重放旧操作，也不需要点交还。 |
 | `STALE_OBSERVATION` | 重新截图/获取浏览器快照，再做下一步，包括你手动输入之后。 |
 | `OUTCOME_UNKNOWN` | 先检查页面、文件或外部状态；不能换个 action ID 就盲目重放可能已完成的操作。 |

@@ -468,25 +468,13 @@ def create_app(
         ),
     )
 
-    async def idle_reaper():
-        while True:
-            await asyncio.sleep(15)
-            if (
-                runtime.session.mode == "agent"
-                and time.monotonic() - runtime.session.last_activity > 1800
-            ):
-                await runtime.control("paused")
-
     @asynccontextmanager
     async def lifespan(app):
         await runtime.start()
-        task = asyncio.create_task(idle_reaper())
         try:
             async with manager.run():
                 yield
         finally:
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
             await runtime.close()
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)

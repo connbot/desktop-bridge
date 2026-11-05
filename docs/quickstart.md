@@ -235,7 +235,7 @@ These prompts are examples, not a promised model success rate. See the
 | `PERMISSION_REQUIRED` from a coding tool | The `safe` command policy may deny this operation. Stop the denied step, keep any existing result, and ask the owner to review the policy. Do not automatically retry in `trusted`/`dangerous` mode or disguise the command. |
 | `UNAUTHORIZED` or `INVALID_GRANT` | Check the endpoint is still running. Reconnect if refresh authorization expired, was revoked/replayed, or the service restarted. Old access-only connections need new client registration and approval for refresh support. Never use the owner token as a bearer token. |
 | `Unregistered client` after restart | Recreate the connection so the client registers again. |
-| `CONTROL_NOT_OWNED` | If you explicitly paused or went private, click **Resume AI**. Only the owner can release those states; `session_start` cannot. Idle agent sessions pause after about 30 minutes. |
+| `CONTROL_NOT_OWNED` | If you explicitly paused or went private, click **Resume AI**. Only the owner can release those states; `session_start` cannot. Inactivity alone does not pause AI or stop managed commands. |
 | `HUMAN_INPUT_ACTIVE` | Let queued input finish and release held keys/buttons; the client should then take a fresh observation, not retry an old action. No handoff button is needed. |
 | `STALE_OBSERVATION` | Take a new screenshot or browser snapshot before the next action, including after owner input. |
 | `OUTCOME_UNKNOWN` | Inspect the actual page/file/external state before deciding what to do. Do not blindly resend the side effect with a new ID. |

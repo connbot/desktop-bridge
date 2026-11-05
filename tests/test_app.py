@@ -192,6 +192,10 @@ def test_oauth_roundtrip_and_mcp(app):
         )
         assert response.status_code == 200, response.text
         assert response.json()["result"]["serverInfo"]["name"] == "desktop-bridge"
+        instructions = response.json()["result"]["instructions"]
+        assert "the connected client's confirmation rules" in instructions
+        assert "Do not ask again for the same, already-authorized action" in instructions
+        assert "still obtain any required per-action confirmation" in instructions
         result = c.post(
             "/mcp",
             headers=mcp_headers,

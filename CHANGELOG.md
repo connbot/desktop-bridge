@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- Upgrade the desktop, local and Fly image base from Debian 12 (Bookworm) to Debian 13 (Trixie), retaining Python 3.12 and existing Python dependency pins.
+- Assert Debian/Python versions and Python dependency consistency in the existing desktop and Fly image acceptance workflows. This upgrade targets fresh sandboxes.
+
 ## 0.1.0 - 2026-10-06
 
 ### Added

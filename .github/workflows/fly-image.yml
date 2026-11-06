@@ -18,6 +18,14 @@ jobs:
         run: >-
           docker build --target fly --build-arg BRIDGE_PYTHON_EXTRAS=desktop,postgres
           -t desktop-bridge:fly .
+      - name: Verify Debian 13, Python 3.12 and installed dependencies
+        run: |
+          docker run --rm --entrypoint sh desktop-bridge:fly -c '
+            set -eu
+            . /etc/os-release
+            test "$VERSION_CODENAME" = trixie
+            python -c "import sys; assert sys.version_info[:2] == (3, 12)"
+            python -m pip check'
       - name: Verify inherited output works after dropping root but path reopen is denied
         run: |
           docker run --rm --user root --entrypoint python3 desktop-bridge:fly -c '

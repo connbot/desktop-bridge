@@ -45,6 +45,14 @@ jobs:
           python-version: '3.12'
       - name: Build actual desktop image
         run: docker build -t desktop-bridge:test .
+      - name: Verify Debian 13, Python 3.12 and installed dependencies
+        run: |
+          docker run --rm --entrypoint sh desktop-bridge:test -c '
+            set -eu
+            . /etc/os-release
+            test "$VERSION_CODENAME" = trixie
+            python -c "import sys; assert sys.version_info[:2] == (3, 12)"
+            python -m pip check'
       - name: Start isolated test desktop
         run: |
           docker run -d --name bridge --shm-size=1g -p 127.0.0.1:8080:8080 \

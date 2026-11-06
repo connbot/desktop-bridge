@@ -1,5 +1,22 @@
 # Verification record
 
+## Debian 13 upgrade (November 6, 2026)
+
+The shared desktop stage uses `python:3.12-slim-trixie`, inherited by the local
+and Fly targets. Python remains 3.12; application pins and the explicit apt package
+list are unchanged. The upgrade targets fresh sandboxes, not cross-version volume
+or browser profile migration.
+
+Local checks before publication: **588 Python tests passed, 4 optional PostgreSQL
+tests skipped**, **19 viewer tests passed**, plus Ruff, workflow YAML parsing,
+shell syntax and `git diff --check`. These checks use synthetic backends, not a
+real Trixie desktop. The local executor had no container runtime.
+
+The desktop and Fly workflows assert Debian Trixie, Python 3.12 and `pip check`
+before their existing real GUI/browser, viewer/input, restart and volume ownership
+checks. Exact-commit CI results are required to validate the new base image;
+historical image acceptance below does not validate this change.
+
 ## Shared desktop simplification (local review, October 24, 2026)
 
 Based on the still-unmerged setup/OAuth branch at `1bd4a1c22bea1246d43823336ad736021f55ea36`,

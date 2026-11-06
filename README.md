@@ -193,6 +193,8 @@ Need help or want to improve the project? Start with [contributing and support](
 
 The project's source is [Apache-2.0](LICENSE). Dependencies retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md). This is an independent project with no OpenAI, Muse or Cua affiliation. The Muse/dots comparison describes the computer-use experience, not feature parity or endorsement.
 
+The desktop image uses Debian 13 (Trixie) with Python 3.12. Python and application dependency versions are unchanged by the Debian upgrade. This upgrade targets fresh sandboxes.
+
 Dependencies are pinned where practical, including the reviewed Coding Tools commit identified in `pyproject.toml`. Base images and Debian packages can change, so rebuilds are not claimed to be byte-for-byte identical.
 
 ## Share the project

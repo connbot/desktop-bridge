@@ -75,7 +75,7 @@ def test_cli_does_not_follow_existing_output_symlink(tmp_path):
 
 def test_fly_target_is_explicit_and_default_remains_non_root():
     dockerfile = (ROOT / "Dockerfile").read_text()
-    assert "FROM python:3.12-slim-bookworm AS desktop" in dockerfile
+    assert "FROM python:3.12-slim-trixie AS desktop" in dockerfile
     assert "USER bridge" in dockerfile.split("FROM desktop AS fly")[0]
     fly_stage = dockerfile.split("FROM desktop AS fly")[1].split("FROM desktop AS local")[0]
     assert "USER root" in fly_stage

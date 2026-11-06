@@ -1,4 +1,4 @@
-FROM python:3.12-slim-bookworm AS desktop
+FROM python:3.12-slim-trixie AS desktop
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 DISPLAY=:99 HOME=/home/bridge LANG=C.UTF-8
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential linux-libc-dev chromium xvfb x11vnc openbox xclip novnc supervisor tini fonts-noto-cjk \
